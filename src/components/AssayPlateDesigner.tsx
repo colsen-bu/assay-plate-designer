@@ -34,7 +34,6 @@ const AssayPlateDesigner = () => {
   const [editData, setEditData] = useState({
     cellType: '',
     compound: '',
-    dose: '',
     concentration: '',
     concentrationUnits: ''
   });
@@ -101,7 +100,6 @@ const AssayPlateDesigner = () => {
       newWells[wellId] = {
         cellType: editData.cellType,
         compound: editData.compound,
-        dose: editData.dose,
         concentration: editData.concentration,
         concentrationUnits: editData.concentrationUnits
       };
@@ -129,7 +127,7 @@ const AssayPlateDesigner = () => {
 
   const exportToCSV = () => {
     const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
-    let csv = 'Well,Cell Type,Compound,Dose,Concentration,Concentration Units\n';
+    let csv = 'Well,Cell Type,Compound,Concentration,Concentration Units\n';
     
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -137,11 +135,10 @@ const AssayPlateDesigner = () => {
         const well = wells[wellId] || { 
           cellType: '',
           compound: '',
-          dose: '',
           concentration: '',
           concentrationUnits: ''
         };
-        csv += `${wellId},${well.cellType},${well.compound},${well.dose},${well.concentration},${well.concentrationUnits}\n`;
+        csv += `${wellId},${well.cellType},${well.compound},${well.concentration},${well.concentrationUnits}\n`;
       }
     }
     
@@ -221,13 +218,6 @@ const AssayPlateDesigner = () => {
               placeholder="Compound"
               value={editData.compound}
               onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
-              className="p-2 border rounded w-full"
-            />
-            <input
-              type="text"
-              placeholder="Dose"
-              value={editData.dose}
-              onChange={(e) => setEditData(prev => ({ ...prev, dose: e.target.value }))}
               className="p-2 border rounded w-full"
             />
             <div className="flex space-x-2">
@@ -328,7 +318,6 @@ const AssayPlateDesigner = () => {
                     <div className="absolute inset-0 p-1 text-xs overflow-hidden">
                       {well.cellType && <div className="truncate">{well.cellType}</div>}
                       {well.compound && <div className="truncate">{well.compound}</div>}
-                      {well.dose && <div className="truncate">{well.dose}</div>}
                       {well.concentration && (
                         <div className="truncate">
                           {well.concentration} {well.concentrationUnits}
