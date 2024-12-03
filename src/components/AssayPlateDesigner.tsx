@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Save, FileDown, Upload } from 'lucide-react';
+import {Save, FileDown, Upload, Trash } from 'lucide-react';
 
 const PLATE_CONFIGURATIONS = {
   6: { rows: 2, cols: 3 },
@@ -13,8 +13,21 @@ const PLATE_CONFIGURATIONS = {
 };
 
 // Function to generate a consistent color for a compound name
-const getCompoundColor = (compound) => {
-  if (!compound) return null;
+interface Well {
+  cellType?: string;
+  compound?: string;
+  concentration?: string;
+  concentrationUnits?: string;
+}
+
+// 1. Add interface for saved plates
+interface SavedPlate {
+  plateType: keyof typeof PLATE_CONFIGURATIONS;
+  wells: { [key: string]: Well };
+}
+
+const getCompoundColor = (compound: string): string => {
+  if (!compound) return 'transparent';
   
   // Basic hash function to generate a number from a string
   const hash = compound.split('').reduce((acc, char) => {
@@ -27,9 +40,9 @@ const getCompoundColor = (compound) => {
 };
 
 const AssayPlateDesigner = () => {
-  const [plateType, setPlateType] = useState(96);
-  const [wells, setWells] = useState({});
-  const [selection, setSelection] = useState({ start: null, current: null });
+  const [plateType, setPlateType] = useState<keyof typeof PLATE_CONFIGURATIONS>(96);
+  const [wells, setWells] = useState<{ [key: string]: Well }>({});
+  const [selection, setSelection] = useState<{ start: { row: number, col: number } | null, current: { row: number, col: number } | null }>({ start: null, current: null });
   const [isSelecting, setIsSelecting] = useState(false);
   const [editData, setEditData] = useState({
     cellType: '',
@@ -37,73 +50,100 @@ const AssayPlateDesigner = () => {
     concentration: '',
     concentrationUnits: ''
   });
-  const [uniqueCompounds, setUniqueCompounds] = useState(new Set());
+  const [uniqueCompounds, setUniqueCompounds] = useState<Set<string>>(new Set());
   
   const plateRef = useRef(null);
 
-  const [savedPlates, setSavedPlates] = useState(() => {
-  const saved = localStorage.getItem('savedPlates');
-  return saved ? JSON.parse(saved) : {};
-  });
+  // 2. Update the states
+  const [savedPlates, setSavedPlates] = useState<{ [key: string]: SavedPlate }>({});
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [newPlateName, setNewPlateName] = useState('');
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (!selection.start) return;
-  
-      const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
-  
-      if (e.shiftKey) {
-        let newSelection = { ...selection };
-  
-        // If selecting an entire row
-        if (selection.start.col === 0 && selection.current.col === cols - 1) {
-          switch (e.key) {
-            case 'ArrowUp':
-              e.preventDefault();
-              newSelection.start.row = Math.max(0, selection.start.row - 1);
-              break;
-            case 'ArrowDown':
-              e.preventDefault();
-              newSelection.current.row = Math.min(rows - 1, selection.current.row + 1);
-              break;
+    if (typeof window !== 'undefined') {
+      const handleKeyDown = (e: KeyboardEvent) => {   
+        if (!selection.start) return;
+    
+        const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
+    
+        if (e.shiftKey) {
+          const newSelection = { ...selection };
+    
+          // If selecting an entire row
+          if (selection.start.col === 0 && selection.current && selection.current.col === cols - 1) {
+            switch (e.key) {
+              case 'ArrowUp':
+                e.preventDefault();
+                if (newSelection.start) {
+                  newSelection.start.row = Math.max(0, selection.start.row - 1);
+                }
+                break;
+              case 'ArrowDown':
+                e.preventDefault();
+                if (newSelection.current) {
+                  newSelection.current.row = Math.min(rows - 1, selection.current.row + 1);
+                }
+                break;
+            }
           }
-        }
-  
-        // If selecting an entire column
-        if (selection.start.row === 0 && selection.current.row === rows - 1) {
-          switch (e.key) {
-            case 'ArrowLeft':
-              e.preventDefault();
-              newSelection.start.col = Math.max(0, selection.start.col - 1);
-              break;
-            case 'ArrowRight':
-              e.preventDefault();
-              newSelection.current.col = Math.min(cols - 1, selection.current.col + 1);
-              break;
+    
+          // If selecting an entire column
+          if (selection.start.row === 0 && selection.current && selection.current.row === rows - 1) {
+            switch (e.key) {
+              case 'ArrowLeft':
+                e.preventDefault();
+                if (newSelection.start) {
+                  newSelection.start.col = Math.max(0, selection.start.col - 1);
+                }
+                break;
+              case 'ArrowRight':
+                e.preventDefault();
+                if (newSelection.current) {
+                  newSelection.current.col = Math.min(cols - 1, selection.current.col + 1);
+                }
+                break;
+            }
           }
+    
+          setSelection(newSelection);
         }
+      };
   
-        setSelection(newSelection);
-      }
-    };
-  
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
   }, [selection, plateType]);
+
+
 
   useEffect(() => {    
     // Update unique compounds whenever wells change
-    const compounds = new Set();
+    const compounds = new Set<string>();
     Object.values(wells).forEach(well => {
-      if (well.compound) {
-        compounds.add(well.compound);
+      const typedWell = well as Well;
+      if (typedWell.compound) {
+        if (typedWell.compound) {
+          compounds.add(typedWell.compound);
+        }
       }
     });
     setUniqueCompounds(compounds);
   }, [wells]);
 
-  const getRowLabel = (index) => String.fromCharCode(65 + index);
+  useEffect(() => {
+    // Check if the code is running in the browser
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('savedPlates');
+      if (saved) {
+        setSavedPlates(JSON.parse(saved));
+      }
+    }
+  }, []);
+
+  const getRowLabel = (index: number): string => {
+    return String.fromCharCode(65 + index);
+  };
   
   const getSelectedWells = () => {
     if (!selection.start || !selection.current) return [];
@@ -122,7 +162,7 @@ const AssayPlateDesigner = () => {
     return selectedWells;
   };
 
-  const handleMouseDown = (row, col) => {
+  const handleMouseDown = (row: number, col: number) => {
     setIsSelecting(true);
     setSelection({
       start: { row, col },
@@ -130,7 +170,7 @@ const AssayPlateDesigner = () => {
     });
   };
 
-  const handleMouseMove = (row, col) => {
+  const handleMouseMove = (row: number, col: number) => {
     if (isSelecting) {
       setSelection(prev => ({
         ...prev,
@@ -160,7 +200,7 @@ const AssayPlateDesigner = () => {
     setSelection({ start: null, current: null });
   };
 
-  const handleRowSelect = (rowIndex) => {
+  const handleRowSelect = (rowIndex: number) => {
     const { cols } = PLATE_CONFIGURATIONS[plateType];
     setSelection({
       start: { row: rowIndex, col: 0 },
@@ -168,7 +208,7 @@ const AssayPlateDesigner = () => {
     });
   };
 
-  const handleColumnSelect = (colIndex) => {
+  const handleColumnSelect = (colIndex: number) => {
     const { rows } = PLATE_CONFIGURATIONS[plateType];
     setSelection({
       start: { row: 0, col: colIndex },
@@ -193,31 +233,37 @@ const AssayPlateDesigner = () => {
       }
     }
     
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'plate_config.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    if (typeof window !== 'undefined') {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'plate_config.csv';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
   };
 
   // Modify saveConfiguration function
   const saveConfiguration = () => {
-    const plateName = prompt('Enter a name for this plate configuration:');
-    if (plateName) {
+    if (!newPlateName) {
+      setShowSaveModal(true);
+    } else {
       const updatedSavedPlates = {
         ...savedPlates,
-        [plateName]: { plateType, wells }
+        [newPlateName]: { plateType, wells },
       };
-      
       setSavedPlates(updatedSavedPlates);
-      localStorage.setItem('savedPlates', JSON.stringify(updatedSavedPlates));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('savedPlates', JSON.stringify(updatedSavedPlates));
+      }
+      setShowSaveModal(false);
+      setNewPlateName('');
     }
   };
 
   // Modify loadConfiguration function
-  const loadConfiguration = (plateName) => {
+  const loadConfiguration = (plateName: string) => {
     const config = savedPlates[plateName];
     if (config) {
       setPlateType(config.plateType);
@@ -230,18 +276,21 @@ const AssayPlateDesigner = () => {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="mb-6 space-y-4">
         <div className="flex space-x-4">
+          {/* 3. Update the select element rendering */}
           <select
-            value={plateType}
-            onChange={(e) => setPlateType(Number(e.target.value))}
+            value={plateType.toString()}
+            onChange={(e) => setPlateType(Number(e.target.value) as keyof typeof PLATE_CONFIGURATIONS)}
             className="p-2 border rounded"
           >
-            {Object.keys(PLATE_CONFIGURATIONS).map(type => (
-              <option key={type} value={type}>{type}-well plate</option>
+            {Object.entries(PLATE_CONFIGURATIONS).map(([type]) => (
+              <option key={type} value={type}>
+                {type}-well plate
+              </option>
             ))}
           </select>
           
           <button
-            onClick={saveConfiguration}
+            onClick={() => setShowSaveModal(true)}
             className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             <Save className="w-4 h-4 mr-2" /> Save
@@ -249,12 +298,14 @@ const AssayPlateDesigner = () => {
 
           <button
           onClick={() => {
-            localStorage.removeItem('savedPlates');
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('savedPlates');
+            }
             setSavedPlates({});
           }}
           className="flex items-center px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
           >
-          Clear Saved
+          <Trash className="w-4 h-4 mr-2" /> Clear Saved
           </button>
           
           <button
@@ -342,17 +393,18 @@ const AssayPlateDesigner = () => {
           </div>
         )}
         {/* Compound Color Legend */}
+        {/* 5. Update compound legend rendering */}
         {uniqueCompounds.size > 0 && (
           <div className="mt-4 p-4 border rounded">
             <h3 className="font-bold mb-2">Compound Legend</h3>
             <div className="flex flex-wrap gap-2">
-              {Array.from(uniqueCompounds).map(compound => (
+              {[...uniqueCompounds].map((compound: string) => (
                 <div
                   key={compound}
                   className="flex items-center space-x-2 px-2 py-1 rounded"
                   style={{ backgroundColor: getCompoundColor(compound) }}
                 >
-                  <span>{compound}</span>
+                  {compound}
                 </div>
               ))}
             </div>
@@ -384,7 +436,7 @@ const AssayPlateDesigner = () => {
         </div> 
           <div className="flex">
             <div className="w-8" /> {/* Spacer for row labels */}
-            {Array.from({ length: PLATE_CONFIGURATIONS[plateType].cols }).map((_, colIndex) => (
+            {[...Array(PLATE_CONFIGURATIONS[plateType].cols)].map((_, colIndex) => (
               <div
                 key={colIndex}
                 className="w-16 h-8 flex items-center justify-center cursor-pointer hover:bg-gray-100"
@@ -395,23 +447,24 @@ const AssayPlateDesigner = () => {
             ))}
           </div>
 
-          {Array.from({ length: PLATE_CONFIGURATIONS[plateType].rows }).map((_, rowIndex) => (
+          {/* 4. Update Array mapping for wells */}
+          {Array.from({length: PLATE_CONFIGURATIONS[plateType].rows}).map((_, rowIndex) => (
             <div key={rowIndex} className="flex">
               <div
                 className="w-8 h-16 flex items-center justify-center cursor-pointer hover:bg-gray-100"
                 onClick={() => handleRowSelect(rowIndex)}
               >
-                {getRowLabel(rowIndex)}
+                {String.fromCharCode(65 + rowIndex)}
               </div>
-              {Array.from({ length: PLATE_CONFIGURATIONS[plateType].cols }).map((_, colIndex) => {
-                const wellId = `${getRowLabel(rowIndex)}${colIndex + 1}`;
-                const well = wells[wellId] || {};
+              {Array.from({length: PLATE_CONFIGURATIONS[plateType].cols}).map((_, colIndex) => {
+                const wellId = `${String.fromCharCode(65 + rowIndex)}${colIndex + 1}`;
+                const well: Well = wells[wellId] || {};
                 const isSelected = getSelectedWells().includes(wellId);
                 const backgroundColor = well.compound ? getCompoundColor(well.compound) : 'white';
                 
                 return (
                   <div
-                    key={colIndex}
+                    key={`${rowIndex}-${colIndex}`}
                     className={`w-16 h-16 border border-gray-300 cursor-pointer relative overflow-hidden`}
                     onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
                     onMouseMove={() => handleMouseMove(rowIndex, colIndex)}
@@ -425,12 +478,12 @@ const AssayPlateDesigner = () => {
                       <div className="absolute inset-0 bg-blue-500 opacity-30" />
                     )}
                     <div className="absolute inset-0 p-1 text-xs overflow-hidden">
-                      {well.cellType && <div className="truncate">{well.cellType}</div>}
-                      {well.compound && <div className="truncate">{well.compound}</div>}
+                      {well.cellType && <span className="block truncate">{well.cellType}</span>}
+                      {well.compound && <span className="block truncate">{well.compound}</span>}
                       {well.concentration && (
-                        <div className="truncate">
+                        <span className="block truncate">
                           {well.concentration} {well.concentrationUnits}
-                        </div>
+                        </span>
                       )}
                     </div>
                   </div>
@@ -440,6 +493,32 @@ const AssayPlateDesigner = () => {
           ))}
         </div>
       </div>
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Save Plate Configuration</h2>
+            <input
+              type="text"
+              placeholder="Plate Name"
+              value={newPlateName}
+              onChange={(e) => setNewPlateName(e.target.value)}
+              className="p-2 border rounded w-full"
+            />
+            <button
+              onClick={saveConfiguration}
+              className="mt-4 w-full p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setShowSaveModal(false)}
+              className="mt-2 w-full p-2 bg-gray-200 rounded"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
