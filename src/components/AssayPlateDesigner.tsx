@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback} from 'react';
 import {Save, FileDown, Upload, Trash, Calculator } from 'lucide-react';
 import { TitrationCalculator } from '../lib/titration_calculation';
 
@@ -60,6 +60,7 @@ const AssayPlateDesigner = () => {
   const [plateType, setPlateType] = useState<keyof typeof PLATE_CONFIGURATIONS>(96);
   const [wells, setWells] = useState<{ [key: string]: Well }>({});
   const [isSelecting, setIsSelecting] = useState(false);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
   const [editData, setEditData] = useState({
     cellType: '',
     compound: '',
@@ -69,7 +70,7 @@ const AssayPlateDesigner = () => {
   const [uniqueCompounds, setUniqueCompounds] = useState<Set<string>>(new Set());
 
   // Update getSelectedWells for new selection format
-  const getSelectedWells = () => {
+  const getSelectedWells = useCallback(() => {
     if (!selection) return [];
     
     const startRow = Math.min(selection.fixed.row, selection.moving.row);
@@ -84,7 +85,7 @@ const AssayPlateDesigner = () => {
       }
     }
     return selectedWells;
-  };
+  }, [selection]);
   
   const plateRef = useRef(null);
 
@@ -95,13 +96,10 @@ const AssayPlateDesigner = () => {
   const [newPlateName, setNewPlateName] = useState('');
 
   // Add new state to track active selection edge
-  const [activeEdge, setActiveEdge] = useState<'horizontal' | 'vertical' | null>(null);
-
-  // Update state definitions
-  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [, setActiveEdge] = useState<'horizontal' | 'vertical' | null>(null);
 
   // Add new state for selected wells
-  const [selectedWells, setSelectedWells] = useState<string[]>([]);
+  //const [selectedWells, setSelectedWells] = useState<string[]>([]);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showTitrationModal, setShowTitrationModal] = useState(false);
 
