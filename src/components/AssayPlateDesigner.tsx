@@ -1,7 +1,8 @@
 "use client"
 
 import React, { useState, useRef, useEffect } from 'react';
-import {Save, FileDown, Upload, Trash } from 'lucide-react';
+import {Save, FileDown, Upload, Trash, Calculator } from 'lucide-react';
+import { TitrationCalculator } from '../lib/titration_calculation';
 
 const PLATE_CONFIGURATIONS = {
   6: { rows: 2, cols: 3 },
@@ -18,6 +19,9 @@ interface Well {
   compound?: string;
   concentration?: string;
   concentrationUnits?: string;
+  dilutionStep?: number;
+  replicate?: number;
+  titrationId?: string;
 }
 
 // 1. Add interface for saved plates
@@ -25,6 +29,19 @@ interface SavedPlate {
   plateType: keyof typeof PLATE_CONFIGURATIONS;
   wells: { [key: string]: Well };
 }
+
+// Add new interfaces
+interface SelectionEdge {
+  row: number;
+  col: number;
+}
+
+interface SelectionState {
+  fixed: SelectionEdge;
+  moving: SelectionEdge;
+  lastMoving?: SelectionEdge; // Track previous position
+}
+
 
 const getCompoundColor = (compound: string): string => {
   if (!compound) return 'transparent';
@@ -42,7 +59,6 @@ const getCompoundColor = (compound: string): string => {
 const AssayPlateDesigner = () => {
   const [plateType, setPlateType] = useState<keyof typeof PLATE_CONFIGURATIONS>(96);
   const [wells, setWells] = useState<{ [key: string]: Well }>({});
-  const [selection, setSelection] = useState<{ start: { row: number, col: number } | null, current: { row: number, col: number } | null }>({ start: null, current: null });
   const [isSelecting, setIsSelecting] = useState(false);
   const [editData, setEditData] = useState({
     cellType: '',
@@ -51,6 +67,24 @@ const AssayPlateDesigner = () => {
     concentrationUnits: ''
   });
   const [uniqueCompounds, setUniqueCompounds] = useState<Set<string>>(new Set());
+
+  // Update getSelectedWells for new selection format
+  const getSelectedWells = () => {
+    if (!selection) return [];
+    
+    const startRow = Math.min(selection.fixed.row, selection.moving.row);
+    const endRow = Math.max(selection.fixed.row, selection.moving.row);
+    const startCol = Math.min(selection.fixed.col, selection.moving.col);
+    const endCol = Math.max(selection.fixed.col, selection.moving.col);
+    
+    const selectedWells = [];
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        selectedWells.push(`${getRowLabel(row)}${col + 1}`);
+      }
+    }
+    return selectedWells;
+  };
   
   const plateRef = useRef(null);
 
@@ -60,54 +94,146 @@ const AssayPlateDesigner = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [newPlateName, setNewPlateName] = useState('');
 
+  // Add new state to track active selection edge
+  const [activeEdge, setActiveEdge] = useState<'horizontal' | 'vertical' | null>(null);
+
+  // Update state definitions
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+
+  // Add new state for selected wells
+  const [selectedWells, setSelectedWells] = useState<string[]>([]);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showTitrationModal, setShowTitrationModal] = useState(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const handleKeyDown = (e: KeyboardEvent) => {   
-        if (!selection.start) return;
+        if (!selection) return;
+        
+        // Don't prevent default if an input is focused
+        if (document.activeElement?.tagName === 'INPUT') return;
     
         const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
+
+
+        if (e.key === 'Delete'|| e.key === 'Backspace') {
+          e.preventDefault();
+          const selectedWellIds = getSelectedWells();
+          const newWells = { ...wells };
+          
+          selectedWellIds.forEach(wellId => {
+            // Clear all data from the well while preserving the object
+            newWells[wellId] = {
+              cellType: '',
+              compound: '',
+              concentration: '',
+              concentrationUnits: '',
+              dilutionStep: undefined,
+              replicate: undefined,
+              titrationId: undefined
+            };
+          });
+          
+          setWells(newWells);
+        }
     
         if (e.shiftKey) {
+          e.preventDefault(); // Only prevent default for non-input elements
           const newSelection = { ...selection };
-    
-          // If selecting an entire row
-          if (selection.start.col === 0 && selection.current && selection.current.col === cols - 1) {
-            switch (e.key) {
-              case 'ArrowUp':
-                e.preventDefault();
-                if (newSelection.start) {
-                  newSelection.start.row = Math.max(0, selection.start.row - 1);
+          
+          // Store current position before moving
+          newSelection.lastMoving = { ...newSelection.moving };
+          
+          switch (e.key) {
+            case 'ArrowLeft':
+              if (newSelection.moving.col > 0) {
+                // Contract if we were moving right before
+                if (newSelection.lastMoving && newSelection.lastMoving.col > newSelection.moving.col) {
+                  newSelection.moving.col = Math.max(0, newSelection.moving.col - 1);
+                } else {
+                  // Expand left
+                  newSelection.moving.col = Math.max(0, newSelection.moving.col - 1);
                 }
-                break;
-              case 'ArrowDown':
-                e.preventDefault();
-                if (newSelection.current) {
-                  newSelection.current.row = Math.min(rows - 1, selection.current.row + 1);
+                setActiveEdge('horizontal');
+              }
+              break;
+              
+            case 'ArrowRight':
+              if (newSelection.moving.col < cols - 1) {
+                // Contract if we were moving left before
+                if (newSelection.lastMoving && newSelection.lastMoving.col < newSelection.moving.col) {
+                  newSelection.moving.col = Math.min(cols - 1, newSelection.moving.col + 1);
+                } else {
+                  // Expand right
+                  newSelection.moving.col = Math.min(cols - 1, newSelection.moving.col + 1);
                 }
-                break;
-            }
+                setActiveEdge('horizontal');
+              }
+              break;
+              
+            // Similar logic for up/down arrows
+            case 'ArrowUp':
+              if (newSelection.moving.row > 0) {
+                if (newSelection.lastMoving && newSelection.lastMoving.row > newSelection.moving.row) {
+                  newSelection.moving.row = Math.max(0, newSelection.moving.row - 1);
+                } else {
+                  newSelection.moving.row = Math.max(0, newSelection.moving.row - 1);
+                }
+                setActiveEdge('vertical');
+              }
+              break;
+              
+            case 'ArrowDown':
+              if (newSelection.moving.row < rows - 1) {
+                if (newSelection.lastMoving && newSelection.lastMoving.row < newSelection.moving.row) {
+                  newSelection.moving.row = Math.min(rows - 1, newSelection.moving.row + 1);
+                } else {
+                  newSelection.moving.row = Math.min(rows - 1, newSelection.moving.row + 1);
+                }
+                setActiveEdge('vertical');
+              }
+              break;
           }
-    
-          // If selecting an entire column
-          if (selection.start.row === 0 && selection.current && selection.current.row === rows - 1) {
-            switch (e.key) {
-              case 'ArrowLeft':
-                e.preventDefault();
-                if (newSelection.start) {
-                  newSelection.start.col = Math.max(0, selection.start.col - 1);
-                }
-                break;
-              case 'ArrowRight':
-                e.preventDefault();
-                if (newSelection.current) {
-                  newSelection.current.col = Math.min(cols - 1, selection.current.col + 1);
-                }
-                break;
-            }
-          }
-    
+          
           setSelection(newSelection);
         }
+        else {
+          e.preventDefault();
+          const newSelection = { ...selection };
+          
+          switch (e.key) {
+            case 'ArrowLeft':
+              if (selection.fixed.col > 0 && selection.moving.col > 0) {
+                newSelection.fixed.col--;
+                newSelection.moving.col--;
+              }
+              break;
+              
+            case 'ArrowRight':
+              if (selection.fixed.col < cols - 1 && selection.moving.col < cols - 1) {
+                newSelection.fixed.col++;
+                newSelection.moving.col++;
+              }
+              break;
+              
+            case 'ArrowUp':
+              if (selection.fixed.row > 0 && selection.moving.row > 0) {
+                newSelection.fixed.row--;
+                newSelection.moving.row--;
+              }
+              break;
+              
+            case 'ArrowDown':
+              if (selection.fixed.row < rows - 1 && selection.moving.row < rows - 1) {
+                newSelection.fixed.row++;
+                newSelection.moving.row++;
+              }
+              break;
+          }
+          
+          setSelection(newSelection);
+        }
+        
       };
   
       window.addEventListener('keydown', handleKeyDown);
@@ -115,7 +241,61 @@ const AssayPlateDesigner = () => {
     }
   }, [selection, plateType]);
 
-
+  // Add clipboard handler
+  useEffect(() => {
+    const handleCopy = (e: ClipboardEvent) => {
+      if (!selection) return;
+      if (document.activeElement?.tagName === 'INPUT') return;
+      
+      e.preventDefault();
+      const selectedWellIds = getSelectedWells();
+      const wellData = selectedWellIds.map(wellId => wells[wellId] || {});
+      e.clipboardData?.setData('text/plain', JSON.stringify(wellData));
+    };
+  
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (!selection) return;
+      if (document.activeElement?.tagName === 'INPUT') return;
+      
+      e.preventDefault();
+      const pasteData = e.clipboardData?.getData('text/plain');
+      if (!pasteData) return;
+  
+      try {
+        const wellData = JSON.parse(pasteData);
+        if (!Array.isArray(wellData)) return;
+  
+        const targetWellIds = getSelectedWells();
+        const newWells = { ...wells };
+  
+        if (wellData.length === 1) {
+          // Paste single well to all selected
+          targetWellIds.forEach(wellId => {
+            newWells[wellId] = { ...wellData[0] };
+          });
+        } else {
+          // Paste pattern to selection
+          targetWellIds.forEach((wellId, index) => {
+            if (wellData[index % wellData.length]) {
+              newWells[wellId] = { ...wellData[index % wellData.length] };
+            }
+          });
+        }
+  
+        setWells(newWells);
+      } catch (err) {
+        console.error('Paste failed:', err);
+      }
+    };
+  
+    document.addEventListener('copy', handleCopy);
+    document.addEventListener('paste', handlePaste);
+    
+    return () => {
+      document.removeEventListener('copy', handleCopy);
+      document.removeEventListener('paste', handlePaste);
+    };
+  }, [selection, wells, getSelectedWells]);
 
   useEffect(() => {    
     // Update unique compounds whenever wells change
@@ -141,40 +321,72 @@ const AssayPlateDesigner = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (selection) {
+      // Get the first selected well to populate edit fields
+      const selectedWellIds = getSelectedWells();
+      if (selectedWellIds.length > 0) {
+        const firstWell = wells[selectedWellIds[0]] || {
+          cellType: '',
+          compound: '',
+          concentration: '',
+          concentrationUnits: ''
+        };
+          
+          setEditData({
+            cellType: firstWell.cellType || '',
+            compound: firstWell.compound || '',
+            concentration: firstWell.concentration || '',
+            concentrationUnits: firstWell.concentrationUnits || ''
+          });
+        }
+    } else {
+      // Clear edit fields when deselecting
+      setEditData({
+        cellType: '',
+        compound: '',
+        concentration: '',
+        concentrationUnits: ''
+      });
+    }
+  }, [selection, wells]);
+
   const getRowLabel = (index: number): string => {
     return String.fromCharCode(65 + index);
   };
   
-  const getSelectedWells = () => {
-    if (!selection.start || !selection.current) return [];
+  
+
+  // Modified handleMouseDown
+  const handleMouseDown = (row: number, col: number, e: React.MouseEvent) => {
+    const wellId = `${getRowLabel(row)}${col + 1}`;
     
-    const startRow = Math.min(selection.start.row, selection.current.row);
-    const endRow = Math.max(selection.start.row, selection.current.row);
-    const startCol = Math.min(selection.start.col, selection.current.col);
-    const endCol = Math.max(selection.start.col, selection.current.col);
-    
-    const selectedWells = [];
-    for (let row = startRow; row <= endRow; row++) {
-      for (let col = startCol; col <= endCol; col++) {
-        selectedWells.push(`${getRowLabel(row)}${col + 1}`);
-      }
+    if (getSelectedWells().includes(wellId)) {
+      setSelection(null);
+      return;
     }
-    return selectedWells;
-  };
-
-  const handleMouseDown = (row: number, col: number) => {
+    
     setIsSelecting(true);
-    setSelection({
-      start: { row, col },
-      current: { row, col }
-    });
+    if (e.shiftKey && selection) {
+      setSelection({
+        ...selection,
+        moving: { row, col },
+        lastMoving: selection.moving
+      });
+    } else {
+      setSelection({
+        fixed: { row, col },
+        moving: { row, col }
+      });
+    }
   };
 
+  // Modified handleMouseMove
   const handleMouseMove = (row: number, col: number) => {
     if (isSelecting) {
       setSelection(prev => ({
-        ...prev,
-        current: { row, col }
+        ...prev!,
+        moving: { row, col }
       }));
     }
   };
@@ -189,6 +401,7 @@ const AssayPlateDesigner = () => {
     
     selectedWells.forEach(wellId => {
       newWells[wellId] = {
+        ...wells[wellId],
         cellType: editData.cellType,
         compound: editData.compound,
         concentration: editData.concentration,
@@ -197,22 +410,22 @@ const AssayPlateDesigner = () => {
     });
     
     setWells(newWells);
-    setSelection({ start: null, current: null });
+    setSelection(null);
   };
 
   const handleRowSelect = (rowIndex: number) => {
     const { cols } = PLATE_CONFIGURATIONS[plateType];
     setSelection({
-      start: { row: rowIndex, col: 0 },
-      current: { row: rowIndex, col: cols - 1 }
+      fixed: { row: rowIndex, col: 0 },
+      moving: { row: rowIndex, col: cols - 1 }
     });
   };
 
   const handleColumnSelect = (colIndex: number) => {
     const { rows } = PLATE_CONFIGURATIONS[plateType];
     setSelection({
-      start: { row: 0, col: colIndex },
-      current: { row: rows - 1, col: colIndex }
+      fixed: { row: 0, col: colIndex },
+      moving: { row: rows - 1, col: colIndex }
     });
   };
 
@@ -273,7 +486,7 @@ const AssayPlateDesigner = () => {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto select-none">
       <div className="mb-6 space-y-4">
         <div className="flex space-x-4">
           {/* 3. Update the select element rendering */}
@@ -297,12 +510,7 @@ const AssayPlateDesigner = () => {
           </button>
 
           <button
-          onClick={() => {
-            if (typeof window !== 'undefined') {
-              localStorage.removeItem('savedPlates');
-            }
-            setSavedPlates({});
-          }}
+          onClick={() => setShowClearConfirm(true)}
           className="flex items-center px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
           >
           <Trash className="w-4 h-4 mr-2" /> Clear Saved
@@ -320,6 +528,13 @@ const AssayPlateDesigner = () => {
             className="flex items-center px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
           >
             <FileDown className="w-4 h-4 mr-2" /> Export CSV
+          </button>
+
+          <button
+            onClick={() => setShowTitrationModal(true)}
+            className="flex items-center px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+          >
+            <Calculator className="w-4 h-4 mr-2" /> Setup Titration
           </button>
         </div>
 
@@ -352,46 +567,54 @@ const AssayPlateDesigner = () => {
             </div>
           )}
 
-        {selection.start && (
-          <div className="space-y-2">
+        <div className="space-y-2">
+          <input
+            type="text"
+            placeholder="Cell Type"
+            value={editData.cellType}
+            onChange={(e) => setEditData(prev => ({ ...prev, cellType: e.target.value }))}
+            className={`p-2 border rounded w-full ${!selection ? 'opacity-50' : ''}`}
+            disabled={!selection}
+          />
+          <input
+            type="text"
+            placeholder="Compound"
+            value={editData.compound}
+            onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
+            className={`p-2 border rounded w-full ${!selection ? 'opacity-50' : ''}`}
+            disabled={!selection}
+          />
+          <div className="flex space-x-2">
             <input
               type="text"
-              placeholder="Cell Type"
-              value={editData.cellType}
-              onChange={(e) => setEditData(prev => ({ ...prev, cellType: e.target.value }))}
-              className="p-2 border rounded w-full"
+              placeholder="Concentration"
+              value={editData.concentration}
+              onChange={(e) => setEditData(prev => ({ ...prev, concentration: e.target.value }))}
+              className={`p-2 border rounded w-full ${!selection ? 'opacity-50' : ''}`}
+              disabled={!selection}
             />
             <input
               type="text"
-              placeholder="Compound"
-              value={editData.compound}
-              onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
-              className="p-2 border rounded w-full"
+              placeholder="Units"
+              value={editData.concentrationUnits}
+              onChange={(e) => setEditData(prev => ({ ...prev, concentrationUnits: e.target.value }))}
+              className={`p-2 border rounded w-full ${!selection ? 'opacity-50' : ''}`}
+              disabled={!selection}
             />
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                placeholder="Concentration"
-                value={editData.concentration}
-                onChange={(e) => setEditData(prev => ({ ...prev, concentration: e.target.value }))}
-                className="p-2 border rounded w-full"
-              />
-              <input
-                type="text"
-                placeholder="Units"
-                value={editData.concentrationUnits}
-                onChange={(e) => setEditData(prev => ({ ...prev, concentrationUnits: e.target.value }))}
-                className="p-2 border rounded w-full"
-              />
-            </div>
-            <button
-              onClick={handleWellUpdate}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 w-full"
-            >
-              Update Selected Wells
-            </button>
           </div>
-        )}
+          <button
+            onClick={handleWellUpdate}
+            disabled={!selection}
+            className={`px-4 py-2 text-white rounded w-full ${
+              selection 
+              ? 'bg-blue-500 hover:bg-blue-600' 
+              : 'bg-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {selection ? 'Update Selected Wells' : 'Select Wells to Update'}
+          </button>
+        </div>
+
         {/* Compound Color Legend */}
         {/* 5. Update compound legend rendering */}
         {uniqueCompounds.size > 0 && (
@@ -422,12 +645,12 @@ const AssayPlateDesigner = () => {
           className="absolute top-0 left-0 w-8 h-8 bg-gray-200 hover:bg-gray-300 flex items-center justify-center cursor-pointer z-10"
           onClick={() => {
             const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
-            if (selection.start && selection.current) {
-              setSelection({ start: null, current: null });
+            if (selection) {
+              setSelection(null);
             } else {
               setSelection({
-                start: { row: 0, col: 0 },
-                current: { row: rows - 1, col: cols - 1 }
+                fixed: { row: 0, col: 0 },
+                moving: { row: rows - 1, col: cols - 1 }
               });
             }
           }}
@@ -466,7 +689,7 @@ const AssayPlateDesigner = () => {
                   <div
                     key={`${rowIndex}-${colIndex}`}
                     className={`w-16 h-16 border border-gray-300 cursor-pointer relative overflow-hidden`}
-                    onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
+                    onMouseDown={(e) => handleMouseDown(rowIndex, colIndex, e)}
                     onMouseMove={() => handleMouseMove(rowIndex, colIndex)}
                     onMouseUp={handleMouseUp}
                   >
@@ -516,6 +739,62 @@ const AssayPlateDesigner = () => {
             >
               Cancel
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Clear Saved confirmation modal JSX */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Clear Saved Plates?</h2>
+            <p className="mb-4">Are you sure you want to clear all saved plate configurations? This cannot be undone.</p>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => {
+                  localStorage.removeItem('savedPlates');
+                  setSavedPlates({});
+                  setShowClearConfirm(false);
+                }}
+                className="flex-1 p-2 bg-red-500 text-white rounded hover:bg-red-600"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 p-2 bg-gray-200 rounded"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTitrationModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Setup Titration</h2>
+            <TitrationCalculator 
+              onCalculate={(results) => {
+                // Apply titration results to wells
+                const newWells = { ...wells };
+                results.forEach(result => {
+                  newWells[result.wellId] = {
+                    ...wells[result.wellId],
+                    compound: result.compound,
+                    concentration: result.concentration.toString(),
+                    concentrationUnits: result.units,
+                    dilutionStep: result.dilutionStep,
+                    replicate: result.replicate,
+                    titrationId: result.titrationId
+                  };
+                });
+                setWells(newWells);
+                setShowTitrationModal(false);
+              }}
+              onCancel={() => setShowTitrationModal(false)}
+            />
           </div>
         </div>
       )}
