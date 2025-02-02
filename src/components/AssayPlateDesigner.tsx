@@ -107,6 +107,62 @@ const AssayPlateDesigner = () => {
     if (typeof window !== 'undefined') {
       const handleKeyDown = (e: KeyboardEvent) => {   
         if (!selection) return;
+
+        // Always allow Cmd/Ctrl + R to work
+        if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+          return; // Exit early without preventing default
+        }
+
+
+        // Handle copy/paste
+        if ((e.metaKey || e.ctrlKey)) {
+          if (e.key === 'c') { // Copy
+            e.preventDefault();
+            const selectedWellIds = getSelectedWells();
+            const wellData = selectedWellIds.map(wellId => {
+              const well = wells[wellId] || {};
+              return {
+                cellType: well.cellType || '',
+                compound: well.compound || '',
+                concentration: well.concentration || '',
+                concentrationUnits: well.concentrationUnits || '',
+                dilutionStep: well.dilutionStep,
+                replicate: well.replicate,
+                titrationId: well.titrationId
+              };
+            });
+            navigator.clipboard.writeText(JSON.stringify(wellData));
+            return;
+          }
+          
+          if (e.key === 'v') { // Paste
+            e.preventDefault();
+            navigator.clipboard.readText()
+              .then(text => {
+                try {
+                  const pastedData = JSON.parse(text);
+                  if (!Array.isArray(pastedData)) return;
+                  
+                  const selectedWellIds = getSelectedWells();
+                  const newWells = { ...wells };
+                  
+                  selectedWellIds.forEach((wellId, index) => {
+                    if (index < pastedData.length) {
+                      newWells[wellId] = {
+                        ...wells[wellId],
+                        ...pastedData[index]
+                      };
+                    }
+                  });
+                  
+                  setWells(newWells);
+                } catch (err) {
+                  console.error('Failed to paste well data:', err);
+                }
+              });
+            return;
+          }
+        }
         
         // Don't prevent default if an input is focused
         if (document.activeElement?.tagName === 'INPUT') return;
@@ -239,61 +295,6 @@ const AssayPlateDesigner = () => {
     }
   }, [selection, plateType]);
 
-  // Add clipboard handler
-  useEffect(() => {
-    const handleCopy = (e: ClipboardEvent) => {
-      if (!selection) return;
-      if (document.activeElement?.tagName === 'INPUT') return;
-      
-      e.preventDefault();
-      const selectedWellIds = getSelectedWells();
-      const wellData = selectedWellIds.map(wellId => wells[wellId] || {});
-      e.clipboardData?.setData('text/plain', JSON.stringify(wellData));
-    };
-  
-    const handlePaste = async (e: ClipboardEvent) => {
-      if (!selection) return;
-      if (document.activeElement?.tagName === 'INPUT') return;
-      
-      e.preventDefault();
-      const pasteData = e.clipboardData?.getData('text/plain');
-      if (!pasteData) return;
-  
-      try {
-        const wellData = JSON.parse(pasteData);
-        if (!Array.isArray(wellData)) return;
-  
-        const targetWellIds = getSelectedWells();
-        const newWells = { ...wells };
-  
-        if (wellData.length === 1) {
-          // Paste single well to all selected
-          targetWellIds.forEach(wellId => {
-            newWells[wellId] = { ...wellData[0] };
-          });
-        } else {
-          // Paste pattern to selection
-          targetWellIds.forEach((wellId, index) => {
-            if (wellData[index % wellData.length]) {
-              newWells[wellId] = { ...wellData[index % wellData.length] };
-            }
-          });
-        }
-  
-        setWells(newWells);
-      } catch (err) {
-        console.error('Paste failed:', err);
-      }
-    };
-  
-    document.addEventListener('copy', handleCopy);
-    document.addEventListener('paste', handlePaste);
-    
-    return () => {
-      document.removeEventListener('copy', handleCopy);
-      document.removeEventListener('paste', handlePaste);
-    };
-  }, [selection, wells, getSelectedWells]);
 
   useEffect(() => {    
     // Update unique compounds whenever wells change
