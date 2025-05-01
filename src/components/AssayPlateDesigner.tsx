@@ -607,18 +607,25 @@ const AssayPlateDesigner = () => {
 
   const exportToCSV = () => {
     const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
-    let csv = 'Well,Cell Type,Compound,Concentration,Concentration Units\n';
+    // Add headers with potential titration/replicate info
+    let csv = 'Well,Cell Type,Compound,Concentration,Concentration Units,Titration ID,Dilution Step,Replicate\n';
     
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const wellId = `${getRowLabel(row)}${col + 1}`;
-        const well = wells[wellId] || { 
-          cellType: '',
-          compound: '',
-          concentration: '',
-          concentrationUnits: ''
-        };
-        csv += `${wellId},${well.cellType},${well.compound},${well.concentration},${well.concentrationUnits}\n`;
+        const well = wells[wellId] || {}; // Get well data or empty object
+        
+        // Ensure undefined values become empty strings for CSV
+        const cellType = well.cellType ?? '';
+        const compound = well.compound ?? '';
+        const concentration = well.concentration ?? '';
+        const concentrationUnits = well.concentrationUnits ?? '';
+        const titrationId = well.titrationId ?? '';
+        const dilutionStep = well.dilutionStep ?? '';
+        const replicate = well.replicate ?? '';
+
+        // Append row data, escaping commas within fields if necessary (basic example)
+        csv += `${wellId},"${cellType}","${compound}","${concentration}","${concentrationUnits}","${titrationId}","${dilutionStep}","${replicate}"\n`;
       }
     }
     
