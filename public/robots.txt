@@ -1,0 +1,7 @@
+# Allow all crawlers access to all content
+User-agent: *
+Allow: /
+
+# Sitemap location
+# TODO: Replace with your actual domain
+Sitemap: https://www.plate.mcvcllmhgb.com/sitemap.xml

@@ -737,7 +737,7 @@ const AssayPlateDesigner = () => {
               onChange={(e) => setEdgeEffectEnabled(e.target.checked)}
               className="form-checkbox h-5 w-5 text-blue-600"
             />
-            <span className="text-sm">Enable Edge Effect</span>
+            <span className="text-sm">Enable Edge Effect Exclusion</span>
           </label>
         </div>
 
