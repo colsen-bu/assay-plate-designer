@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Save, FileDown, Upload, Trash, Calculator, Shuffle } from 'lucide-react';
+import { Save, FileDown, Upload, Trash, Calculator, Shuffle, FileUp } from 'lucide-react'; // Import FileUp icon
 import { TitrationCalculator } from '../lib/titration_calculation';
 
 const PLATE_CONFIGURATIONS = {
@@ -133,6 +133,126 @@ const AssayPlateDesigner = () => {
   // Add this ref at the top of your component to track the previous edge effect state
   const prevEdgeEffectStateRef = useRef<boolean | undefined>(undefined);
   const prevPlateTypeRef = useRef<keyof typeof PLATE_CONFIGURATIONS | undefined>(undefined);
+
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for the hidden file input
+
+  // Function to trigger the hidden file input
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Function to parse CSV row, handling quotes
+  const parseCsvRow = (row: string): string[] => {
+    const result: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+    for (let i = 0; i < row.length; i++) {
+      const char = row[i];
+      if (char === '"' && (i === 0 || row[i - 1] !== '\\')) { // Handle escaped quotes later if needed
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(currentField.trim());
+        currentField = '';
+      } else {
+        currentField += char;
+      }
+    }
+    result.push(currentField.trim()); // Add the last field
+    return result.map(field => field.startsWith('"') && field.endsWith('"') ? field.slice(1, -1) : field);
+  };
+
+  // Updated file upload handler
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) {
+        alert('Error reading file content.');
+        return;
+      }
+
+      try {
+        const lines = text.trim().split(/\r?\n/); // Split lines, handle Windows/Unix endings
+        if (lines.length < 2) {
+          alert('CSV file must contain at least a header and one data row.');
+          return;
+        }
+
+        const header = parseCsvRow(lines[0]);
+        
+        // Find indices of required and optional columns
+        const wellIndex = header.findIndex(h => h.toLowerCase() === 'well');
+        const cellTypeIndex = header.findIndex(h => h.toLowerCase() === 'cell type');
+        const compoundIndex = header.findIndex(h => h.toLowerCase() === 'compound');
+        const concentrationIndex = header.findIndex(h => h.toLowerCase() === 'concentration');
+        const unitsIndex = header.findIndex(h => h.toLowerCase() === 'concentration units');
+        const titrationIdIndex = header.findIndex(h => h.toLowerCase() === 'titration id');
+        const dilutionStepIndex = header.findIndex(h => h.toLowerCase() === 'dilution step');
+        const replicateIndex = header.findIndex(h => h.toLowerCase() === 'replicate');
+
+        // Validate required columns
+        if (wellIndex === -1 || cellTypeIndex === -1 || compoundIndex === -1) {
+          alert('CSV file is missing required columns: "Well", "Cell Type", or "Compound".');
+          return;
+        }
+
+        const newWells: { [key: string]: Well } = {};
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue; // Skip empty lines
+          const rowData = parseCsvRow(lines[i]);
+          const wellId = rowData[wellIndex]; 
+
+          if (!wellId) continue; // Skip rows without a Well ID
+
+          // Basic validation for wellId format (e.g., A1, B12)
+          if (!/^[A-Z]+\d+$/.test(wellId)) {
+             console.warn(`Skipping row ${i + 1}: Invalid Well ID format "${wellId}"`);
+             continue;
+          }
+
+          newWells[wellId] = {
+            cellType: rowData[cellTypeIndex] ?? '',
+            compound: rowData[compoundIndex] ?? '',
+            concentration: concentrationIndex !== -1 ? rowData[concentrationIndex] ?? '' : '',
+            concentrationUnits: unitsIndex !== -1 ? rowData[unitsIndex] ?? '' : '',
+            titrationId: titrationIdIndex !== -1 ? rowData[titrationIdIndex] ?? '' : '',
+            // Handle potential numeric conversion for dilutionStep and replicate
+            dilutionStep: dilutionStepIndex !== -1 && rowData[dilutionStepIndex] ? Number(rowData[dilutionStepIndex]) : undefined,
+            replicate: replicateIndex !== -1 && rowData[replicateIndex] ? Number(rowData[replicateIndex]) : undefined,
+          };
+        }
+
+        saveToHistory(wells); // Save current state before overwriting
+        setWells(newWells);
+        saveToHistory(newWells); // Save new state
+        setSelection(null); // Clear selection after import
+        alert('Plate data imported successfully!');
+
+      } catch (error) {
+        console.error("Error parsing CSV:", error);
+        alert('Failed to parse CSV file. Please ensure it is correctly formatted.');
+      }
+
+      // Reset file input value to allow uploading the same file again
+      if (event.target) {
+        event.target.value = '';
+      }
+    };
+
+    reader.onerror = () => {
+      alert('Error reading file.');
+      // Reset file input value
+      if (event.target) {
+        event.target.value = '';
+      }
+    };
+
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     // Only run this effect if edgeEffectEnabled or plateType has changed
@@ -710,21 +830,29 @@ const AssayPlateDesigner = () => {
           </button>
 
           <button
+            onClick={() => setShowLoadModal(true)}
+            className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            <Upload className="w-4 h-4 mr-2" /> Load
+          </button>
+
+          <button
           onClick={() => setShowClearConfirm(true)}
           className="flex items-center px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
           >
           <Trash className="w-4 h-4 mr-2" /> Clear Saved
           </button>
           
+          {/* Add Import CSV Button */}
           <button
-            onClick={() => setShowLoadModal(true)}
-            className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={triggerFileInput} // Correct: triggers the hidden input
+            className="flex items-center px-4 py-2 bg-teal-500 text-white rounded hover:bg-teal-600"
           >
-            <Upload className="w-4 h-4 mr-2" /> Load
+            <FileUp className="w-4 h-4 mr-2" /> Import CSV
           </button>
           
           <button
-            onClick={exportToCSV}
+            onClick={exportToCSV} // Ensure this is exportToCSV, not handleFileUpload
             className="flex items-center px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
           >
             <FileDown className="w-4 h-4 mr-2" /> Export CSV
@@ -748,34 +876,14 @@ const AssayPlateDesigner = () => {
           </label>
         </div>
 
-          {showLoadModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white p-6 rounded-lg max-w-md w-full">
-                <h2 className="text-xl font-bold mb-4">Load Plate Configuration</h2>
-                {Object.keys(savedPlates).length === 0 ? (
-                  <p>No saved plate configurations found.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {Object.keys(savedPlates).map((plateName) => (
-                      <button
-                        key={plateName}
-                        onClick={() => loadConfiguration(plateName)}
-                        className="w-full p-2 border rounded hover:bg-gray-100"
-                      >
-                        {plateName}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button
-                  onClick={() => setShowLoadModal(false)}
-                  className="mt-4 w-full p-2 bg-gray-200 rounded"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+        {/* Hidden File Input */}
+        <input 
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload} // Attach the handler
+          accept=".csv" // Accept only CSV files
+          style={{ display: 'none' }} // Hide the input element
+        />
 
         <div className="space-y-2">
           <input
@@ -964,6 +1072,35 @@ const AssayPlateDesigner = () => {
             </button>
             <button
               onClick={() => setShowSaveModal(false)}
+              className="mt-2 w-full p-2 bg-gray-200 rounded"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showLoadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full">
+            <h2 className="text-xl font-bold mb-4">Load Plate Configuration</h2>
+            {Object.keys(savedPlates).length > 0 ? (
+              <ul className="max-h-60 overflow-y-auto mb-4 border rounded">
+                {Object.keys(savedPlates).map((plateName) => (
+                  <li
+                    key={plateName}
+                    onClick={() => loadConfiguration(plateName)}
+                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                  >
+                    {plateName} ({savedPlates[plateName].plateType}-well)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-gray-500 mb-4">No saved plates found.</p>
+            )}
+            <button
+              onClick={() => setShowLoadModal(false)}
               className="mt-2 w-full p-2 bg-gray-200 rounded"
             >
               Cancel
