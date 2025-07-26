@@ -132,7 +132,7 @@ pipeline:
         
         echo "✅ Database backup completed: $BACKUP_FILE"
     environment:
-      - PGPASSWORD
+      - PGPASSWORD:
         from_secret: postgres_password
     when:
       event: cron
@@ -166,9 +166,6 @@ pipeline:
         #   $SLACK_WEBHOOK_URL
         
         echo "$STATUS: Pipeline completed for ${CI_COMMIT_BRANCH}"
-    environment:
-      - SLACK_WEBHOOK_URL
-        from_secret: slack_webhook
     when:
       event: push
       branch: [main, deployment]
