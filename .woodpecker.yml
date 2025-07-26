@@ -9,7 +9,7 @@ variables:
   - &node_image 'node:20-alpine'
   - &docker_image 'docker:24-dind'
 
-pipeline:
+steps:
   # Install dependencies and run tests
   test:
     image: *node_image
@@ -133,7 +133,7 @@ pipeline:
         echo "✅ Database backup completed: $BACKUP_FILE"
     environment:
       - PGPASSWORD:
-        from_secret: postgres_password
+          from_secret: postgres_password
     when:
       event: cron
       cron: "0 2 * * *"  # Daily at 2 AM
@@ -166,6 +166,9 @@ pipeline:
         #   $SLACK_WEBHOOK_URL
         
         echo "$STATUS: Pipeline completed for ${CI_COMMIT_BRANCH}"
+    environment:
+      - SLACK_WEBHOOK_URL:
+          from_secret: slack_webhook
     when:
       event: push
       branch: [main, deployment]
@@ -182,14 +185,6 @@ pipeline:
     when:
       event: pull_request
       action: closed
-
-# Matrix builds for different environments (optional)
-matrix:
-  include:
-    - NODE_ENV: production
-      ENVIRONMENT: prod
-    - NODE_ENV: staging
-      ENVIRONMENT: staging
 
 # Services for testing (optional)
 services:
