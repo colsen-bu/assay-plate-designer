@@ -14,7 +14,7 @@ steps:
   test:
     image: *node_image
     commands:
-      - npm ci
+      - npm ci --legacy-peer-deps
       - npm run lint
       - npm run build
       - npm run type-check
@@ -176,7 +176,6 @@ steps:
         #   $SLACK_WEBHOOK_URL
         
         echo "$STATUS: Pipeline completed for ${CI_COMMIT_BRANCH}"
-    environment:
     when:
       event: push
       branch: [main, deployment]
