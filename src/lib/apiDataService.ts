@@ -4,6 +4,7 @@ export interface Project {
   id: string;
   name: string;
   description?: string;
+  created_by: string;
   created_at: Date;
   last_modified: Date;
 }
@@ -45,6 +46,7 @@ class ApiDataService {
           'Content-Type': 'application/json',
           ...options?.headers,
         },
+        credentials: 'include', // Important: Include cookies for authentication
         ...options,
       });
 
@@ -63,6 +65,12 @@ class ApiDataService {
         
         const errorMessage = errorData.error || `HTTP ${response.status}`;
         console.log('Throwing error:', errorMessage);
+        
+        // Handle authentication errors specifically
+        if (response.status === 401) {
+          throw new Error('Authentication required. Please sign in.');
+        }
+        
         throw new Error(errorMessage);
       }
 
@@ -71,8 +79,6 @@ class ApiDataService {
       return data;
     } catch (fetchError) {
       console.error('Fetch error occurred:', fetchError);
-      console.error('Fetch error type:', typeof fetchError);
-      console.error('Fetch error instanceof Error:', fetchError instanceof Error);
       
       // Re-throw the error to be handled by the calling code
       throw fetchError;
@@ -202,6 +208,7 @@ class ApiDataService {
   async updatePlate(id: string, data: {
     name?: string;
     description?: string;
+    plate_type?: number;
     tags?: string[];
     status?: 'draft' | 'active' | 'completed' | 'archived';
     wells?: Record<string, any>;
@@ -239,6 +246,76 @@ class ApiDataService {
 
   async updateWells(plateId: string, wells: Record<string, any>): Promise<void> {
     await this.updatePlate(plateId, { wells });
+  }
+
+  // User compounds and cell types management
+  async getUserCompounds(): Promise<any[]> {
+    return await this.request<any[]>('/user-compounds');
+  }
+
+  async addUserCompound(compoundName: string): Promise<any> {
+    return await this.request<any>('/user-compounds', {
+      method: 'POST',
+      body: JSON.stringify({ compound_name: compoundName }),
+    });
+  }
+
+  async getUserCellTypes(): Promise<any[]> {
+    return await this.request<any[]>('/user-cell-types');
+  }
+
+  async addUserCellType(cellTypeName: string): Promise<any> {
+    return await this.request<any>('/user-cell-types', {
+      method: 'POST',
+      body: JSON.stringify({ cell_type_name: cellTypeName }),
+    });
+  }
+
+  // Plate template management
+  async getPlateTemplates(): Promise<any[]> {
+    return await this.request<any[]>('/plate-templates');
+  }
+
+  async getPlateTemplate(templateId: string): Promise<any> {
+    return await this.request<any>(`/plate-templates/${templateId}`);
+  }
+
+  async createPlateTemplate(data: {
+    name: string;
+    description?: string;
+    plate_type: number;
+    template_wells: Record<string, any>;
+    dosing_parameters: object;
+    control_configuration: object;
+  }): Promise<any> {
+    return await this.request<any>('/plate-templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePlateTemplate(templateId: string, data: any): Promise<any> {
+    return await this.request<any>(`/plate-templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deletePlateTemplate(templateId: string): Promise<void> {
+    await this.request(`/plate-templates/${templateId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async generatePlatesFromTemplate(templateId: string, data: {
+    project_id: string;
+    compounds: string[];
+    plate_name_prefix?: string;
+  }): Promise<any> {
+    return await this.request<any>(`/plate-templates/${templateId}/generate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 }
 

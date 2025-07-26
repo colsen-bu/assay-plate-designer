@@ -3,6 +3,17 @@ import { SignIn } from '@clerk/nextjs'
 export default function Page() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      {/* Video Background */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="absolute inset-0 w-full h-full object-cover z-0"
+      >
+        <source src="/platemanager_b_roll.mp4" type="video/mp4" />
+        Your browser does not support the video tag.
+      </video>
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
           Sign in to Assay Plate Designer

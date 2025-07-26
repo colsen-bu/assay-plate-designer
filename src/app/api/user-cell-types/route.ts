@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { getProjects, createProject } from '@/lib/database';
+import { getUserCellTypes, addOrUpdateUserCellType } from '@/lib/database';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     
@@ -10,12 +10,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const projects = await getProjects(userId);
-    return NextResponse.json(projects);
+    const cellTypes = await getUserCellTypes(userId);
+    return NextResponse.json(cellTypes);
   } catch (error) {
-    console.error('Error in GET /api/projects:', error);
+    console.error('Error in GET /api/user-cell-types:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch projects' },
+      { error: 'Failed to fetch cell types' },
       { status: 500 }
     );
   }
@@ -30,21 +30,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description } = body;
+    const { cell_type_name } = body;
 
-    if (!name || typeof name !== 'string') {
+    if (!cell_type_name || !cell_type_name.trim()) {
       return NextResponse.json(
-        { error: 'Project name is required' },
+        { error: 'Cell type name is required' },
         { status: 400 }
       );
     }
 
-    const project = await createProject({ name, description, created_by: userId });
-    return NextResponse.json(project, { status: 201 });
+    const cellType = await addOrUpdateUserCellType(userId, cell_type_name.trim());
+    return NextResponse.json(cellType);
   } catch (error) {
-    console.error('Error in POST /api/projects:', error);
+    console.error('Error in POST /api/user-cell-types:', error);
     return NextResponse.json(
-      { error: 'Failed to create project' },
+      { error: 'Failed to add cell type' },
       { status: 500 }
     );
   }

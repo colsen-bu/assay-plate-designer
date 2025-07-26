@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { FileText, Bell, Search, BarChart3, LogOut, User } from 'lucide-react';
+import { FileText, Search, BarChart3, LogOut, User } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { useUser, useClerk } from '@clerk/nextjs';
 import AssayPlateManager from './AssayPlateManager';
@@ -20,8 +20,17 @@ const Dashboard = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const userMenuRef = useRef<HTMLDivElement>(null);
-
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Utility function to display user name properly
+  const displayUserName = (created_by: string) => {
+    if (created_by.startsWith('user_')) {
+      // This is a Clerk user ID, show the current user's display name
+      return user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Unknown User';
+    }
+    // This is already a display name
+    return created_by;
+  };
 
   // Close search results when clicking outside
   useEffect(() => {
@@ -61,16 +70,18 @@ const Dashboard = () => {
       const matchingPlates: any[] = [];
       projects.forEach(project => {
         project.plates.forEach(plate => {
+          const displayName = displayUserName(plate.created_by);
           if (
             plate.name.toLowerCase().includes(query.toLowerCase()) ||
             plate.description?.toLowerCase().includes(query.toLowerCase()) ||
             plate.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase())) ||
-            plate.created_by.toLowerCase().includes(query.toLowerCase())
+            displayName.toLowerCase().includes(query.toLowerCase())
           ) {
             matchingPlates.push({
               ...plate,
               projectName: project.name,
-              projectId: project.id
+              projectId: project.id,
+              displayCreatedBy: displayName
             });
           }
         });
@@ -188,25 +199,83 @@ const Dashboard = () => {
     ];
 
     const timelineData = useMemo(() => {
-      const last30Days = Array.from({ length: 30 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (29 - i));
-        return date.toISOString().split('T')[0];
-      });
+      if (filteredPlates.length === 0) {
+        return [];
+      }
 
-      return last30Days.map(date => {
-        const platesOnDate = filteredPlates.filter(plate => 
-          plate.created_at.toISOString().split('T')[0] === date
+      // Get today's date at start of day
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Calculate start date based on the selected filter
+      const startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+      
+      switch (dateRange) {
+        case '30d':
+          startDate.setDate(today.getDate() - 29); // Include today
+          break;
+        case '90d':
+          startDate.setDate(today.getDate() - 89); // Include today
+          break;
+        case '180d':
+          startDate.setDate(today.getDate() - 179); // Include today
+          break;
+        case '1y':
+          startDate.setDate(today.getDate() - 364); // Include today
+          break;
+        case 'all':
+        default:
+          // For 'all', find the earliest plate creation date
+          if (filteredPlates.length > 0) {
+            const earliestPlate = filteredPlates.reduce((earliest, plate) => 
+              plate.created_at < earliest ? plate.created_at : earliest, 
+              filteredPlates[0].created_at
+            );
+            startDate.setTime(earliestPlate.getTime());
+            startDate.setHours(0, 0, 0, 0);
+          } else {
+            startDate.setDate(today.getDate() - 29); // fallback
+          }
+          break;
+      }
+
+      // Generate array of dates from start to today (inclusive)
+      const dateArray: string[] = [];
+      const currentDate = new Date(startDate);
+      
+      while (currentDate <= today) {
+        dateArray.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Limit data points for performance (but ensure we include today)
+      let finalDateArray = dateArray;
+      if (dateArray.length > 365 && dateRange === 'all') {
+        // For 'all' with too many points, sample but always include today
+        const step = Math.ceil(dateArray.length / 365);
+        finalDateArray = dateArray.filter((_, index) => 
+          index % step === 0 || dateArray[index] === today.toISOString().split('T')[0]
         );
+      }
+
+      // Create timeline data with proper date handling
+      return finalDateArray.map(dateStr => {
+        const platesOnDate = filteredPlates.filter(plate => {
+          const plateDate = new Date(plate.created_at);
+          plateDate.setHours(0, 0, 0, 0);
+          return plateDate.toISOString().split('T')[0] === dateStr;
+        });
+        
         return {
-          date,
+          date: dateStr,
           created: platesOnDate.length,
           draft: platesOnDate.filter(p => p.status === 'draft').length,
           active: platesOnDate.filter(p => p.status === 'active').length,
           completed: platesOnDate.filter(p => p.status === 'completed').length
         };
       });
-    }, [filteredPlates]);
+    }, [filteredPlates, dateRange]);
 
     if (loading) {
       return (
@@ -313,22 +382,103 @@ const Dashboard = () => {
           <div className="bg-white rounded-lg shadow">
             <div className="p-6 border-b">
               <h2 className="text-xl font-semibold">Plate Creation Timeline</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Showing {timelineData.length} data points • Today: {new Date().toLocaleDateString()}
+              </p>
             </div>
             <div className="p-6">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={timelineData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={(value) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis />
-                  <Tooltip 
-                    labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                  />
-                  <Bar dataKey="created" fill="#3b82f6" />
-                </BarChart>
-              </ResponsiveContainer>
+              {timelineData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart 
+                    data={timelineData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="date" 
+                      tickFormatter={(value) => {
+                        try {
+                          const date = new Date(value + 'T00:00:00');
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          
+                          // Check if this is today
+                          const isToday = date.getTime() === today.getTime();
+                          
+                          let formattedDate;
+                          if (dateRange === '30d' || dateRange === '90d') {
+                            formattedDate = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                          } else if (dateRange === '180d' || dateRange === '1y') {
+                            formattedDate = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                          } else {
+                            formattedDate = date.toLocaleDateString(undefined, { year: '2-digit', month: 'short' });
+                          }
+                          
+                          return isToday ? `${formattedDate} (Today)` : formattedDate;
+                        } catch (error) {
+                          console.error('Error formatting tick:', value, error);
+                          return value;
+                        }
+                      }}
+                      tick={{ fontSize: 11 }}
+                      interval={
+                        dateRange === '30d' ? Math.ceil(timelineData.length / 8) :
+                        dateRange === '90d' ? Math.ceil(timelineData.length / 10) :
+                        dateRange === '180d' ? Math.ceil(timelineData.length / 12) :
+                        dateRange === '1y' ? Math.ceil(timelineData.length / 15) :
+                        Math.ceil(timelineData.length / 20)
+                      }
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 12 }}
+                      label={{ value: 'Plates Created', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      labelFormatter={(value) => {
+                        try {
+                          const date = new Date(value + 'T00:00:00');
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          
+                          const isToday = date.getTime() === today.getTime();
+                          const formattedDate = date.toLocaleDateString(undefined, {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          });
+                          
+                          return isToday ? `${formattedDate} (Today)` : formattedDate;
+                        } catch (error) {
+                          console.error('Error formatting tooltip:', value, error);
+                          return value;
+                        }
+                      }}
+                      formatter={(value, name) => [value, 'Plates Created']}
+                      contentStyle={{
+                        backgroundColor: '#f8f9fa',
+                        border: '1px solid #dee2e6',
+                        borderRadius: '4px'
+                      }}
+                    />
+                    <Bar 
+                      dataKey="created" 
+                      fill="#3b82f6"
+                      radius={[2, 2, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  <div className="text-lg mb-2">No data available</div>
+                  <div className="text-sm">
+                    No plate creation data found for the selected date range ({dateRange})
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -348,6 +498,7 @@ const Dashboard = () => {
                   <tr className="border-b">
                     <th className="text-left p-3 font-medium">Plate Name</th>
                     <th className="text-left p-3 font-medium">Project</th>
+                    <th className="text-left p-3 font-medium">Created By</th>
                     <th className="text-left p-3 font-medium">Created</th>
                     <th className="text-left p-3 font-medium">Status</th>
                     <th className="text-left p-3 font-medium">Actions</th>
@@ -363,6 +514,7 @@ const Dashboard = () => {
                         )}
                       </td>
                       <td className="p-3 text-gray-600">{plate.projectName}</td>
+                      <td className="p-3 text-gray-600">{displayUserName(plate.created_by)}</td>
                       <td className="p-3 text-gray-600">
                         {plate.created_at.toLocaleDateString()}
                       </td>
@@ -489,7 +641,7 @@ const Dashboard = () => {
                           >
                             <div className="font-medium text-gray-900">{plate.name}</div>
                             <div className="text-sm text-gray-500">
-                              {plate.projectName} • {plate.tags.join(', ')}
+                              {plate.projectName} • Created by {plate.displayCreatedBy}
                             </div>
                           </div>
                         ))}
@@ -498,10 +650,6 @@ const Dashboard = () => {
                   </div>
                 )}
               </div>
-              
-              <button className="p-2 text-gray-600 hover:text-gray-900">
-                <Bell className="w-5 h-5" />
-              </button>
               
               {/* User Menu */}
               <div className="relative" ref={userMenuRef}>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { getProject, updateProject, deleteProject } from '@/lib/database';
 
 export async function GET(
@@ -6,8 +7,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
-    const project = await getProject(id);
+    const project = await getProject(id, userId);
     
     if (!project) {
       return NextResponse.json(
@@ -31,6 +38,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { name, description } = body;
@@ -39,14 +52,14 @@ export async function PUT(
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
 
-    const project = await updateProject(id, updates);
+    const project = await updateProject(id, updates, userId);
     return NextResponse.json(project);
   } catch (error) {
     console.error('Error in PUT /api/projects/[id]:', error);
     
-    if (error instanceof Error && error.message === 'Project not found') {
+    if (error instanceof Error && error.message.includes('not found or unauthorized')) {
       return NextResponse.json(
-        { error: 'Project not found' },
+        { error: 'Project not found or unauthorized' },
         { status: 404 }
       );
     }
@@ -63,8 +76,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
-    await deleteProject(id);
+    await deleteProject(id, userId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error in DELETE /api/projects/[id]:', error);

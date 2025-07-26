@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { getProjects, createProject } from '@/lib/database';
+import { getUserCompounds, addOrUpdateUserCompound } from '@/lib/database';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     
@@ -10,12 +10,12 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const projects = await getProjects(userId);
-    return NextResponse.json(projects);
+    const compounds = await getUserCompounds(userId);
+    return NextResponse.json(compounds);
   } catch (error) {
-    console.error('Error in GET /api/projects:', error);
+    console.error('Error in GET /api/user-compounds:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch projects' },
+      { error: 'Failed to fetch compounds' },
       { status: 500 }
     );
   }
@@ -30,21 +30,21 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description } = body;
+    const { compound_name } = body;
 
-    if (!name || typeof name !== 'string') {
+    if (!compound_name || !compound_name.trim()) {
       return NextResponse.json(
-        { error: 'Project name is required' },
+        { error: 'Compound name is required' },
         { status: 400 }
       );
     }
 
-    const project = await createProject({ name, description, created_by: userId });
-    return NextResponse.json(project, { status: 201 });
+    const compound = await addOrUpdateUserCompound(userId, compound_name.trim());
+    return NextResponse.json(compound);
   } catch (error) {
-    console.error('Error in POST /api/projects:', error);
+    console.error('Error in POST /api/user-compounds:', error);
     return NextResponse.json(
-      { error: 'Failed to create project' },
+      { error: 'Failed to add compound' },
       { status: 500 }
     );
   }

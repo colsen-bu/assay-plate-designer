@@ -30,8 +30,14 @@
    - Copy your database URL from Vercel dashboard
    - Run the schema setup:
    ```bash
-   # Connect to your database and run schema.sql
+   # Method 1: Using environment variable (load .env first)
+   export $(grep -v '^#' .env | xargs) && psql $DATABASE_URL -f schema.sql
+   
+   # Method 2: Direct URL (replace with your actual URL)
    psql "your-postgres-url-here" -f schema.sql
+   
+   # If you have existing data, run migration first:
+   psql "your-postgres-url-here" -f migration.sql
    ```
 
 ### 4. Environment Variables

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { getPlates, createPlate } from '@/lib/database';
 
 export async function GET(
@@ -6,8 +7,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
-    const plates = await getPlates(id);
+    const plates = await getPlates(id, userId);
     return NextResponse.json(plates);
   } catch (error) {
     console.error('Error in GET /api/projects/[id]/plates:', error);
@@ -23,9 +30,15 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { userId } = await auth();
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
-    const { name, plate_type, description, created_by, tags, status } = body;
+    const { name, plate_type, description, tags, status } = body;
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json(
@@ -41,19 +54,12 @@ export async function POST(
       );
     }
 
-    if (!created_by || typeof created_by !== 'string') {
-      return NextResponse.json(
-        { error: 'Created by is required' },
-        { status: 400 }
-      );
-    }
-
     const plate = await createPlate({
       project_id: id,
       name,
       plate_type,
       description,
-      created_by,
+      created_by: userId,
       tags: tags || [],
       status: status || 'draft'
     });

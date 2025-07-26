@@ -67,7 +67,7 @@ const getCompoundColor = (compound: string): string => {
 
 interface AssayPlateDesignerProps {
   currentPlate?: Plate | null;
-  onPlateUpdate?: (plateId: string, wells: { [key: string]: Well }) => void;
+  onPlateUpdate?: (plateId: string, wells: { [key: string]: Well }, plateType?: number) => void;
 }
 
 const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerProps) => {
@@ -88,6 +88,32 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedWellsRef = useRef<string>('');
+
+  // User compounds and cell types state
+  const [userCompounds, setUserCompounds] = useState<string[]>([]);
+  const [userCellTypes, setUserCellTypes] = useState<string[]>([]);
+  const [compoundSuggestions, setCompoundSuggestions] = useState<string[]>([]);
+  const [cellTypeSuggestions, setCellTypeSuggestions] = useState<string[]>([]);
+  const [showCompoundSuggestions, setShowCompoundSuggestions] = useState(false);
+  const [showCellTypeSuggestions, setShowCellTypeSuggestions] = useState(false);
+
+  // Template modal state
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templateForm, setTemplateForm] = useState({
+    name: '',
+    description: '',
+    dosing_parameters: {
+      concentrations: [10, 1, 0.1, 0.01],
+      concentration_units: 'μM',
+      replicates: 3,
+      dilution_factor: 10
+    },
+    control_configuration: {
+      positive_controls: [],
+      negative_controls: [],
+      blank_wells: []
+    }
+  });
 
   const getSelectedWells = useCallback(() => {
     if (!selection) return [];
@@ -128,6 +154,153 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
     setWellsHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   }, [wellsHistory, historyIndex]);
+
+  // Handle compound suggestions
+  const handleCompoundInput = (value: string) => {
+    setEditData(prev => ({ ...prev, compound: value }));
+    
+    if (value.length >= 1) {
+      const filtered = userCompounds.filter(compound => 
+        compound.toLowerCase().includes(value.toLowerCase())
+      );
+      setCompoundSuggestions(filtered.slice(0, 10));
+      setShowCompoundSuggestions(filtered.length > 0);
+    } else {
+      setShowCompoundSuggestions(false);
+    }
+  };
+
+  // Handle cell type suggestions
+  const handleCellTypeInput = (value: string) => {
+    setEditData(prev => ({ ...prev, cellType: value }));
+    
+    if (value.length >= 1) {
+      const filtered = userCellTypes.filter(cellType => 
+        cellType.toLowerCase().includes(value.toLowerCase())
+      );
+      setCellTypeSuggestions(filtered.slice(0, 10));
+      setShowCellTypeSuggestions(filtered.length > 0);
+    } else {
+      setShowCellTypeSuggestions(false);
+    }
+  };
+
+  // Add compound to user compounds
+  const addCompoundToUser = async (compoundName: string) => {
+    if (compoundName.trim() && !userCompounds.includes(compoundName.trim())) {
+      try {
+        await apiDataService.addUserCompound(compoundName.trim());
+        setUserCompounds(prev => [compoundName.trim(), ...prev]);
+      } catch (error) {
+        console.error('Failed to add compound:', error);
+      }
+    }
+  };
+
+  // Add cell type to user cell types
+  const addCellTypeToUser = async (cellTypeName: string) => {
+    if (cellTypeName.trim() && !userCellTypes.includes(cellTypeName.trim())) {
+      try {
+        await apiDataService.addUserCellType(cellTypeName.trim());
+        setUserCellTypes(prev => [cellTypeName.trim(), ...prev]);
+      } catch (error) {
+        console.error('Failed to add cell type:', error);
+      }
+    }
+  };
+
+  // Handle plate type change
+  const handlePlateTypeChange = async (newPlateType: keyof typeof PLATE_CONFIGURATIONS) => {
+    if (currentPlate && onPlateUpdate) {
+      try {
+        setPlateType(newPlateType);
+        await onPlateUpdate(currentPlate.id, wells, newPlateType);
+        setSelection(null);
+      } catch (error) {
+        console.error('Failed to update plate type:', error);
+        // Revert on error
+        setPlateType(currentPlate.plate_type as keyof typeof PLATE_CONFIGURATIONS);
+      }
+    } else {
+      setPlateType(newPlateType);
+      setSelection(null);
+    }
+  };
+
+  // Save current plate as template
+  const handleSaveAsTemplate = async () => {
+    if (!currentPlate) {
+      alert('No plate selected');
+      return;
+    }
+
+    if (!templateForm.name.trim()) {
+      alert('Template name is required');
+      return;
+    }
+
+    try {
+      // Create template wells with intelligent placeholder handling
+      const templateWells = { ...wells };
+      Object.keys(templateWells).forEach(wellId => {
+        const well = templateWells[wellId];
+        if (well && well.compound) {
+          // Check if this appears to be a control or specific compound that should be preserved
+          const compound = well.compound.toLowerCase();
+          const isControl = compound.includes('control') || 
+                          compound.includes('blank') || 
+                          compound.includes('positive') || 
+                          compound.includes('negative') ||
+                          compound.includes('dmso') ||
+                          well.wellType === 'positive_control' ||
+                          well.wellType === 'negative_control' ||
+                          well.wellType === 'blank';
+          
+          if (isControl) {
+            // Preserve control wells as-is
+            templateWells[wellId] = { ...well };
+          } else {
+            // Replace sample compounds with placeholder
+            templateWells[wellId] = {
+              ...well,
+              compound: 'COMPOUND_PLACEHOLDER'
+            };
+          }
+        }
+      });
+
+      await apiDataService.createPlateTemplate({
+        name: templateForm.name,
+        description: templateForm.description,
+        plate_type: plateType,
+        template_wells: templateWells,
+        dosing_parameters: templateForm.dosing_parameters,
+        control_configuration: templateForm.control_configuration
+      });
+
+      alert('Template saved successfully!');
+      setShowSaveTemplateModal(false);
+      setTemplateForm({
+        name: '',
+        description: '',
+        dosing_parameters: {
+          concentrations: [10, 1, 0.1, 0.01],
+          concentration_units: 'μM',
+          replicates: 3,
+          dilution_factor: 10
+        },
+        control_configuration: {
+          positive_controls: [],
+          negative_controls: [],
+          blank_wells: []
+        }
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('Failed to save template:', errorMessage);
+      alert('Failed to save template');
+    }
+  };
 
   // Add this ref at the top of your component to track the previous edge effect state
   const prevEdgeEffectStateRef = useRef<boolean | undefined>(undefined);
@@ -572,6 +745,25 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
     }
   }, [currentPlate]);
 
+  // Load user compounds and cell types
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const [compounds, cellTypes] = await Promise.all([
+          apiDataService.getUserCompounds(),
+          apiDataService.getUserCellTypes()
+        ]);
+        
+        setUserCompounds(compounds.map(c => c.compound_name));
+        setUserCellTypes(cellTypes.map(ct => ct.cell_type_name));
+      } catch (error) {
+        console.error('Failed to load user compounds/cell types:', error);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
   // Autosave functionality with debounce
   useEffect(() => {
     if (!currentPlate || !onPlateUpdate) return;
@@ -837,8 +1029,7 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
           <select
             value={plateType.toString()}
             onChange={(e) => {
-              setPlateType(Number(e.target.value) as keyof typeof PLATE_CONFIGURATIONS);
-              setSelection(null);
+              handlePlateTypeChange(Number(e.target.value) as keyof typeof PLATE_CONFIGURATIONS);
             }}
             className="p-2 border rounded"
             disabled={!currentPlate} // Disable when no plate is selected
@@ -907,6 +1098,14 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
             <Calculator className="w-4 h-4 mr-2" /> Setup Titration
           </button>
 
+          <button
+            onClick={() => setShowSaveTemplateModal(true)}
+            className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={!currentPlate}
+          >
+            <Save className="w-4 h-4 mr-2" /> Save as Template
+          </button>
+
           <label className="flex items-center space-x-2 cursor-pointer">
             <input
               type="checkbox"
@@ -929,22 +1128,69 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
         />
 
         <div className="space-y-2">
-          <input
-            type="text"
-            placeholder="Cell Type"
-            value={editData.cellType}
-            onChange={(e) => setEditData(prev => ({ ...prev, cellType: e.target.value }))}
-            className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
-            disabled={!selection || getSelectedWells().length === 0}
-          />
-          <input
-            type="text"
-            placeholder="Compound"
-            value={editData.compound}
-            onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
-            className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
-            disabled={!selection || getSelectedWells().length === 0}
-          />
+          {/* Cell Type Input with Autosuggestion */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Cell Type"
+              value={editData.cellType}
+              onChange={(e) => handleCellTypeInput(e.target.value)}
+              onBlur={() => {
+                setTimeout(() => setShowCellTypeSuggestions(false), 200);
+                addCellTypeToUser(editData.cellType);
+              }}
+              className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+              disabled={!selection || getSelectedWells().length === 0}
+            />
+            {showCellTypeSuggestions && cellTypeSuggestions.length > 0 && (
+              <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
+                {cellTypeSuggestions.map((cellType, index) => (
+                  <div
+                    key={index}
+                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                    onClick={() => {
+                      setEditData(prev => ({ ...prev, cellType }));
+                      setShowCellTypeSuggestions(false);
+                    }}
+                  >
+                    {cellType}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Compound Input with Autosuggestion */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Compound"
+              value={editData.compound}
+              onChange={(e) => handleCompoundInput(e.target.value)}
+              onBlur={() => {
+                setTimeout(() => setShowCompoundSuggestions(false), 200);
+                addCompoundToUser(editData.compound);
+              }}
+              className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+              disabled={!selection || getSelectedWells().length === 0}
+            />
+            {showCompoundSuggestions && compoundSuggestions.length > 0 && (
+              <div className="absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
+                {compoundSuggestions.map((compound, index) => (
+                  <div
+                    key={index}
+                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                    onClick={() => {
+                      setEditData(prev => ({ ...prev, compound }));
+                      setShowCompoundSuggestions(false);
+                    }}
+                  >
+                    {compound}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex space-x-2">
             <input
               type="text"
@@ -1127,6 +1373,112 @@ const AssayPlateDesigner = ({ currentPlate, onPlateUpdate }: AssayPlateDesignerP
               }}
               onCancel={() => setShowTitrationModal(false)}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Save Template Modal */}
+      {showSaveTemplateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full max-h-screen overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Save as Template</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Template Name *
+                </label>
+                <input
+                  type="text"
+                  value={templateForm.name}
+                  onChange={(e) => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  placeholder="Enter template name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={templateForm.description}
+                  onChange={(e) => setTemplateForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  rows={3}
+                  placeholder="Enter template description"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Default Concentrations (μM)
+                </label>
+                <input
+                  type="text"
+                  value={templateForm.dosing_parameters.concentrations.join(', ')}
+                  onChange={(e) => {
+                    const concentrations = e.target.value.split(',').map(c => parseFloat(c.trim())).filter(c => !isNaN(c));
+                    setTemplateForm(prev => ({
+                      ...prev,
+                      dosing_parameters: { ...prev.dosing_parameters, concentrations }
+                    }));
+                  }}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  placeholder="10, 1, 0.1, 0.01"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Default Replicates
+                </label>
+                <input
+                  type="number"
+                  value={templateForm.dosing_parameters.replicates}
+                  onChange={(e) => setTemplateForm(prev => ({
+                    ...prev,
+                    dosing_parameters: { ...prev.dosing_parameters, replicates: parseInt(e.target.value) || 3 }
+                  }))}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  min="1"
+                  max="10"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowSaveTemplateModal(false);
+                  setTemplateForm({
+                    name: '',
+                    description: '',
+                    dosing_parameters: {
+                      concentrations: [10, 1, 0.1, 0.01],
+                      concentration_units: 'μM',
+                      replicates: 3,
+                      dilution_factor: 10
+                    },
+                    control_configuration: {
+                      positive_controls: [],
+                      negative_controls: [],
+                      blank_wells: []
+                    }
+                  });
+                }}
+                className="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAsTemplate}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                disabled={!templateForm.name.trim()}
+              >
+                Save Template
+              </button>
+            </div>
           </div>
         </div>
       )}
