@@ -30,14 +30,12 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/assay_plate_designer
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=${NEXTAUTH_URL}
       - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
       - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       - NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
       - NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
     ports:
-      - "3000:3000"
+      - "3687:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +47,7 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+      - npm-shared
 
 volumes:
   postgres_data:
@@ -57,3 +56,5 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  npm-shared:
+    external: true

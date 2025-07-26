@@ -1,0 +1,206 @@
+when:
+  - event: push
+    branch: 
+      - main
+      - deployment
+  - event: pull_request
+
+variables:
+  - &node_image 'node:20-alpine'
+  - &docker_image 'docker:24-dind'
+
+pipeline:
+  # Install dependencies and run tests
+  test:
+    image: *node_image
+    commands:
+      - npm ci
+      - npm run lint
+      - npm run build
+      - npm run type-check
+    when:
+      event: [push, pull_request]
+
+  # Build Docker image
+  build:
+    image: *docker_image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_BUILDKIT=1
+    commands:
+      - docker build -t assay-plate-designer:${CI_COMMIT_SHA} .
+      - docker build -t assay-plate-designer:latest .
+    when:
+      event: push
+      branch: [main, deployment]
+
+  # Deploy to production (only on main branch)
+  deploy:
+    image: *docker_image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - POSTGRES_PASSWORD
+        from_secret: postgres_password
+      - CLERK_SECRET_KEY
+        from_secret: clerk_secret_key
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        from_secret: clerk_publishable_key
+    commands:
+      # Stop existing containers
+      - docker-compose down || true
+      
+      # Pull latest images and deploy
+      - docker-compose pull postgres || true
+      - docker-compose up -d postgres
+      
+      # Wait for database to be ready
+      - sleep 30
+      
+      # Deploy application
+      - docker-compose up -d app
+      
+      # Health check
+      - sleep 30
+      - |
+        for i in {1..10}; do
+          if curl -f http://localhost:3687/api/health; then
+            echo "✅ Application is healthy"
+            break
+          fi
+          echo "⏳ Waiting for application to be ready... ($i/10)"
+          sleep 10
+        done
+      
+      # Cleanup old images
+      - docker image prune -f
+    when:
+      event: push
+      branch: main
+
+  # Deploy to staging (on deployment branch)
+  deploy-staging:
+    image: *docker_image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - POSTGRES_PASSWORD
+        from_secret: staging_postgres_password
+      - CLERK_SECRET_KEY
+        from_secret: staging_clerk_secret_key
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        from_secret: staging_clerk_publishable_key
+    commands:
+      # Use staging compose file
+      - cp docker-compose.yml docker-compose.staging.yml
+      - sed -i 's/assay-plate-db/assay-plate-db-staging/g' docker-compose.staging.yml
+      - sed -i 's/assay-plate-app/assay-plate-app-staging/g' docker-compose.staging.yml
+      - sed -i 's/3687:3000/3688:3000/g' docker-compose.staging.yml
+      - sed -i 's/5432:5432/5433:5432/g' docker-compose.staging.yml
+      
+      # Deploy to staging
+      - docker-compose -f docker-compose.staging.yml down || true
+      - docker-compose -f docker-compose.staging.yml up -d
+      
+      # Health check staging
+      - sleep 30
+      - |
+        for i in {1..10}; do
+          if curl -f http://localhost:3688/api/health; then
+            echo "✅ Staging application is healthy"
+            break
+          fi
+          echo "⏳ Waiting for staging application to be ready... ($i/10)"
+          sleep 10
+        done
+    when:
+      event: push
+      branch: deployment
+
+  # Database backup (daily)
+  backup:
+    image: postgres:15-alpine
+    commands:
+      - apk add --no-cache curl
+      - |
+        BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
+        pg_dump -h localhost -U postgres -d assay_plate_designer > /tmp/$BACKUP_FILE
+        
+        # Upload to backup storage (customize based on your backup solution)
+        # curl -T /tmp/$BACKUP_FILE ftp://backup-server/backups/
+        
+        echo "✅ Database backup completed: $BACKUP_FILE"
+    environment:
+      - PGPASSWORD
+        from_secret: postgres_password
+    when:
+      event: cron
+      cron: "0 2 * * *"  # Daily at 2 AM
+
+  # Security scan
+  security-scan:
+    image: aquasec/trivy:latest
+    commands:
+      - trivy fs --exit-code 1 --severity HIGH,CRITICAL .
+      - trivy image --exit-code 1 --severity HIGH,CRITICAL assay-plate-designer:latest
+    when:
+      event: [push, pull_request]
+
+  # Notify on deployment success/failure
+  notify:
+    image: curlimages/curl:latest
+    commands:
+      - |
+        if [ "$CI_PIPELINE_STATUS" = "success" ]; then
+          STATUS="✅ SUCCESS"
+          COLOR="good"
+        else
+          STATUS="❌ FAILED" 
+          COLOR="danger"
+        fi
+        
+        # Customize webhook URL for your notification system
+        # curl -X POST -H 'Content-type: application/json' \
+        #   --data "{\"text\":\"$STATUS: Deployment of ${CI_REPO_NAME} (${CI_COMMIT_BRANCH}) completed\"}" \
+        #   $SLACK_WEBHOOK_URL
+        
+        echo "$STATUS: Pipeline completed for ${CI_COMMIT_BRANCH}"
+    environment:
+      - SLACK_WEBHOOK_URL
+        from_secret: slack_webhook
+    when:
+      event: push
+      branch: [main, deployment]
+      status: [success, failure]
+
+  # Cleanup on PR close
+  cleanup-pr:
+    image: *docker_image
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    commands:
+      - docker system prune -f
+      - docker volume prune -f
+    when:
+      event: pull_request
+      action: closed
+
+# Matrix builds for different environments (optional)
+matrix:
+  include:
+    - NODE_ENV: production
+      ENVIRONMENT: prod
+    - NODE_ENV: staging
+      ENVIRONMENT: staging
+
+# Services for testing (optional)
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    when:
+      event: [push, pull_request]
