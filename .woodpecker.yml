@@ -7,7 +7,7 @@ when:
 
 variables:
   - &node_image 'node:20-alpine'
-  - &docker_image 'docker:24-dind'
+  - &docker_image 'docker:24-cli'
 
 steps:
   # Install dependencies and run tests
@@ -27,8 +27,12 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - DOCKER_BUILDKIT=1
+      DOCKER_BUILDKIT: 1
     commands:
+      # Install docker-compose
+      - apk add --no-cache docker-compose
+      
+      # Build Docker images
       - docker build -t assay-plate-designer:${CI_COMMIT_SHA} .
       - docker build -t assay-plate-designer:latest .
     when:
@@ -41,13 +45,16 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - POSTGRES_PASSWORD:
-          from_secret: postgres_password
-      - CLERK_SECRET_KEY:
-          from_secret: clerk_secret_key
-      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-          from_secret: clerk_publishable_key
+      POSTGRES_PASSWORD:
+        from_secret: postgres_password
+      CLERK_SECRET_KEY:
+        from_secret: clerk_secret_key
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        from_secret: clerk_publishable_key
     commands:
+      # Install docker-compose
+      - apk add --no-cache docker-compose curl
+      
       # Stop existing containers
       - docker-compose down || true
       
@@ -85,13 +92,16 @@ steps:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - POSTGRES_PASSWORD:
-          from_secret: staging_postgres_password
-      - CLERK_SECRET_KEY:
-          from_secret: staging_clerk_secret_key
-      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-          from_secret: staging_clerk_publishable_key
+      POSTGRES_PASSWORD:
+        from_secret: staging_postgres_password
+      CLERK_SECRET_KEY:
+        from_secret: staging_clerk_secret_key
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        from_secret: staging_clerk_publishable_key
     commands:
+      # Install docker-compose
+      - apk add --no-cache docker-compose curl
+      
       # Use staging compose file
       - cp docker-compose.yml docker-compose.staging.yml
       - sed -i 's/assay-plate-db/assay-plate-db-staging/g' docker-compose.staging.yml
@@ -132,8 +142,8 @@ steps:
         
         echo "✅ Database backup completed: $BACKUP_FILE"
     environment:
-      - PGPASSWORD:
-          from_secret: postgres_password
+      PGPASSWORD:
+        from_secret: postgres_password
     when:
       event: cron
       cron: "0 2 * * *"  # Daily at 2 AM
@@ -167,8 +177,8 @@ steps:
         
         echo "$STATUS: Pipeline completed for ${CI_COMMIT_BRANCH}"
     environment:
-      - SLACK_WEBHOOK_URL:
-          from_secret: slack_webhook
+      SLACK_WEBHOOK_URL:
+        from_secret: slack_webhook
     when:
       event: push
       branch: [main, deployment]
