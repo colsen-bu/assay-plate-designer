@@ -93,11 +93,11 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       POSTGRES_PASSWORD:
-        from_secret: staging_postgres_password
+        from_secret: postgres_password
       CLERK_SECRET_KEY:
-        from_secret: staging_clerk_secret_key
+        from_secret: clerk_secret_key
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-        from_secret: staging_clerk_publishable_key
+        from_secret: clerk_publishable_key
     commands:
       # Install docker-compose
       - apk add --no-cache docker-compose curl
@@ -194,7 +194,6 @@ steps:
       - docker volume prune -f
     when:
       event: pull_request
-      action: closed
 
 # Services for testing (optional)
 services:
