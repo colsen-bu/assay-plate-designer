@@ -41,12 +41,12 @@ pipeline:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - POSTGRES_PASSWORD
-        from_secret: postgres_password
-      - CLERK_SECRET_KEY
-        from_secret: clerk_secret_key
-      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-        from_secret: clerk_publishable_key
+      - POSTGRES_PASSWORD:
+          from_secret: postgres_password
+      - CLERK_SECRET_KEY:
+          from_secret: clerk_secret_key
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+          from_secret: clerk_publishable_key
     commands:
       # Stop existing containers
       - docker-compose down || true
@@ -85,12 +85,12 @@ pipeline:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - POSTGRES_PASSWORD
-        from_secret: staging_postgres_password
-      - CLERK_SECRET_KEY
-        from_secret: staging_clerk_secret_key
-      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-        from_secret: staging_clerk_publishable_key
+      - POSTGRES_PASSWORD:
+          from_secret: staging_postgres_password
+      - CLERK_SECRET_KEY:
+          from_secret: staging_clerk_secret_key
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+          from_secret: staging_clerk_publishable_key
     commands:
       # Use staging compose file
       - cp docker-compose.yml docker-compose.staging.yml
