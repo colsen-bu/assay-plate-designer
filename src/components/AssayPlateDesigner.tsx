@@ -58,14 +58,41 @@ const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: str
 const getCompoundColor = (compound: string): string => {
   if (!compound) return 'transparent';
   
-  // Basic hash function to generate a number from a string
-  const hash = compound.split('').reduce((acc, char) => {
-    return char.charCodeAt(0) + ((acc << 5) - acc);
-  }, 0);
+  // Predefined palette of high-contrast colors
+  const colorPalette = [
+    'hsla(0, 85%, 70%, 0.85)',      // Vibrant Red
+    'hsla(210, 85%, 65%, 0.85)',    // Bright Blue
+    'hsla(120, 70%, 50%, 0.85)',    // Vivid Green
+    'hsla(45, 90%, 60%, 0.85)',     // Golden Yellow
+    'hsla(280, 75%, 65%, 0.85)',    // Purple
+    'hsla(30, 85%, 60%, 0.85)',     // Orange
+    'hsla(340, 80%, 65%, 0.85)',    // Pink
+    'hsla(180, 70%, 50%, 0.85)',    // Cyan
+    'hsla(160, 65%, 50%, 0.85)',    // Teal
+    'hsla(270, 60%, 55%, 0.85)',    // Violet
+    'hsla(15, 80%, 60%, 0.85)',     // Coral
+    'hsla(200, 75%, 55%, 0.85)',    // Sky Blue
+    'hsla(80, 65%, 50%, 0.85)',     // Lime
+    'hsla(320, 70%, 60%, 0.85)',    // Magenta
+    'hsla(190, 80%, 50%, 0.85)',    // Turquoise
+    'hsla(50, 85%, 55%, 0.85)',     // Bright Yellow
+    'hsla(140, 70%, 45%, 0.85)',    // Emerald
+    'hsla(240, 70%, 60%, 0.85)',    // Indigo
+    'hsla(20, 75%, 65%, 0.85)',     // Salmon
+    'hsla(300, 65%, 55%, 0.85)',    // Orchid
+  ];
   
-  // Generate HSL color with consistent saturation and lightness
-  const hue = Math.abs(hash % 360);
-  return `hsla(${hue}, 70%, 85%, 0.8)`;
+  // Improved hash function for better distribution
+  let hash = 0;
+  for (let i = 0; i < compound.length; i++) {
+    const char = compound.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  
+  // Use hash to select a color from the palette
+  const colorIndex = Math.abs(hash) % colorPalette.length;
+  return colorPalette[colorIndex];
 };
 
 const AssayPlateDesigner = () => {
@@ -651,12 +678,14 @@ const AssayPlateDesigner = () => {
     
     selectedWells.forEach(wellId => {
       if (!unusableWells.has(wellId)) { 
+        const existingWell = wells[wellId] || {};
         newWells[wellId] = {
-          ...wells[wellId],
-          cellType: editData.cellType,
-          compound: editData.compound,
-          concentration: editData.concentration,
-          concentrationUnits: editData.concentrationUnits
+          ...existingWell,
+          // Only update fields that have values in editData (trim to check for empty strings)
+          ...(editData.cellType.trim() && { cellType: editData.cellType }),
+          ...(editData.compound.trim() && { compound: editData.compound }),
+          ...(editData.concentration.trim() && { concentration: editData.concentration }),
+          ...(editData.concentrationUnits.trim() && { concentrationUnits: editData.concentrationUnits })
         };
       }
     });
@@ -665,6 +694,27 @@ const AssayPlateDesigner = () => {
     setWells(newWells);
     saveToHistory(newWells);
     setSelection(null);
+    // Clear the form after applying
+    setEditData({
+      cellType: '',
+      compound: '',
+      concentration: '',
+      concentrationUnits: ''
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && selection && getSelectedWells().length > 0) {
+      e.preventDefault();
+      handleWellUpdate();
+    } else if (e.key === 'Escape') {
+      setEditData({
+        cellType: '',
+        compound: '',
+        concentration: '',
+        concentrationUnits: ''
+      });
+    }
   };
 
   const handleRowSelect = (rowIndex: number) => {
@@ -891,6 +941,7 @@ const AssayPlateDesigner = () => {
             placeholder="Cell Type"
             value={editData.cellType}
             onChange={(e) => setEditData(prev => ({ ...prev, cellType: e.target.value }))}
+            onKeyDown={handleKeyDown}
             className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
             disabled={!selection || getSelectedWells().length === 0}
           />
@@ -899,6 +950,7 @@ const AssayPlateDesigner = () => {
             placeholder="Compound"
             value={editData.compound}
             onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
+            onKeyDown={handleKeyDown}
             className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
             disabled={!selection || getSelectedWells().length === 0}
           />
@@ -908,6 +960,7 @@ const AssayPlateDesigner = () => {
               placeholder="Concentration"
               value={editData.concentration}
               onChange={(e) => setEditData(prev => ({ ...prev, concentration: e.target.value }))}
+              onKeyDown={handleKeyDown}
               className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
               disabled={!selection || getSelectedWells().length === 0}
             />
@@ -916,6 +969,7 @@ const AssayPlateDesigner = () => {
               placeholder="Units"
               value={editData.concentrationUnits}
               onChange={(e) => setEditData(prev => ({ ...prev, concentrationUnits: e.target.value }))}
+              onKeyDown={handleKeyDown}
               className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
               disabled={!selection || getSelectedWells().length === 0}
             />
