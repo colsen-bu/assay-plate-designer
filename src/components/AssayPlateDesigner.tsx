@@ -55,31 +55,31 @@ const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: str
   }
 };
 
-const getCompoundColor = (compound: string): string => {
+const getCompoundColor = (compound: string, concentration?: string, allWells?: { [key: string]: Well }): string => {
   if (!compound) return 'transparent';
   
-  // Predefined palette of high-contrast colors
+  // Base palette - storing hue and saturation only
   const colorPalette = [
-    'hsla(0, 85%, 70%, 0.85)',      // Vibrant Red
-    'hsla(210, 85%, 65%, 0.85)',    // Bright Blue
-    'hsla(120, 70%, 50%, 0.85)',    // Vivid Green
-    'hsla(45, 90%, 60%, 0.85)',     // Golden Yellow
-    'hsla(280, 75%, 65%, 0.85)',    // Purple
-    'hsla(30, 85%, 60%, 0.85)',     // Orange
-    'hsla(340, 80%, 65%, 0.85)',    // Pink
-    'hsla(180, 70%, 50%, 0.85)',    // Cyan
-    'hsla(160, 65%, 50%, 0.85)',    // Teal
-    'hsla(270, 60%, 55%, 0.85)',    // Violet
-    'hsla(15, 80%, 60%, 0.85)',     // Coral
-    'hsla(200, 75%, 55%, 0.85)',    // Sky Blue
-    'hsla(80, 65%, 50%, 0.85)',     // Lime
-    'hsla(320, 70%, 60%, 0.85)',    // Magenta
-    'hsla(190, 80%, 50%, 0.85)',    // Turquoise
-    'hsla(50, 85%, 55%, 0.85)',     // Bright Yellow
-    'hsla(140, 70%, 45%, 0.85)',    // Emerald
-    'hsla(240, 70%, 60%, 0.85)',    // Indigo
-    'hsla(20, 75%, 65%, 0.85)',     // Salmon
-    'hsla(300, 65%, 55%, 0.85)',    // Orchid
+    { h: 0, s: 85 },      // Red
+    { h: 210, s: 85 },    // Blue
+    { h: 120, s: 70 },    // Green
+    { h: 45, s: 90 },     // Yellow
+    { h: 280, s: 75 },    // Purple
+    { h: 30, s: 85 },     // Orange
+    { h: 340, s: 80 },    // Pink
+    { h: 180, s: 70 },    // Cyan
+    { h: 160, s: 65 },    // Teal
+    { h: 270, s: 60 },    // Violet
+    { h: 15, s: 80 },     // Coral
+    { h: 200, s: 75 },    // Sky Blue
+    { h: 80, s: 65 },     // Lime
+    { h: 320, s: 70 },    // Magenta
+    { h: 190, s: 80 },    // Turquoise
+    { h: 50, s: 85 },     // Bright Yellow
+    { h: 140, s: 70 },    // Emerald
+    { h: 240, s: 70 },    // Indigo
+    { h: 20, s: 75 },     // Salmon
+    { h: 300, s: 65 },    // Orchid
   ];
   
   // Improved hash function for better distribution
@@ -92,7 +92,35 @@ const getCompoundColor = (compound: string): string => {
   
   // Use hash to select a color from the palette
   const colorIndex = Math.abs(hash) % colorPalette.length;
-  return colorPalette[colorIndex];
+  const baseColor = colorPalette[colorIndex];
+  
+  // Default lightness
+  let lightness = 60;
+  
+  // If concentration and allWells are provided, adjust lightness based on concentration
+  if (concentration && allWells) {
+    const concValue = parseFloat(concentration);
+    if (!isNaN(concValue)) {
+      // Find all wells with the same compound
+      const sameCompoundConcentrations = Object.values(allWells)
+        .filter(w => w.compound === compound && w.concentration)
+        .map(w => parseFloat(w.concentration || '0'))
+        .filter(c => !isNaN(c));
+      
+      if (sameCompoundConcentrations.length > 0) {
+        const minConc = Math.min(...sameCompoundConcentrations);
+        const maxConc = Math.max(...sameCompoundConcentrations);
+        
+        // If there's a range, scale lightness from 75% (lighter, low dose) to 25% (dark, high dose)
+        if (maxConc > minConc) {
+          const normalized = (concValue - minConc) / (maxConc - minConc);
+          lightness = 85 - (normalized * 50); // Maps 0->75%, 1->25%
+        }
+      }
+    }
+  }
+  
+  return `hsla(${baseColor.h}, ${baseColor.s}%, ${lightness}%, 0.85)`;
 };
 
 const AssayPlateDesigner = () => {
@@ -1111,7 +1139,7 @@ const AssayPlateDesigner = () => {
                 const well: Well = wells[wellId] || {};
                 const isUnusable = unusableWells.has(wellId);
                 const isSelected = !isUnusable && getSelectedWells().includes(wellId);
-                const baseBgColor = well.compound ? getCompoundColor(well.compound) : 'white';
+                const baseBgColor = well.compound ? getCompoundColor(well.compound, well.concentration, wells) : 'white';
                 const finalBgColor = isUnusable ? 'rgb(229 231 235)' : baseBgColor;
 
                 return (
