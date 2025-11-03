@@ -111,6 +111,11 @@ const AssayPlateDesigner = () => {
   const [edgeEffectEnabled, setEdgeEffectEnabled] = useState(false);
   const [unusableWells, setUnusableWells] = useState<Set<string>>(new Set());
 
+  // Legend dragging state
+  const [legendPosition, setLegendPosition] = useState({ x: 8, y: 100 });
+  const [isDraggingLegend, setIsDraggingLegend] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
   const getSelectedWells = useCallback(() => {
     if (!selection) return [];
     
@@ -717,6 +722,38 @@ const AssayPlateDesigner = () => {
     }
   };
 
+  const handleLegendMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingLegend(true);
+    setDragOffset({
+      x: e.clientX - legendPosition.x,
+      y: e.clientY - legendPosition.y
+    });
+  };
+
+  const handleLegendMouseMove = useCallback((e: MouseEvent) => {
+    if (isDraggingLegend) {
+      setLegendPosition({
+        x: e.clientX - dragOffset.x,
+        y: e.clientY - dragOffset.y
+      });
+    }
+  }, [isDraggingLegend, dragOffset]);
+
+  const handleLegendMouseUp = useCallback(() => {
+    setIsDraggingLegend(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDraggingLegend) {
+      window.addEventListener('mousemove', handleLegendMouseMove);
+      window.addEventListener('mouseup', handleLegendMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleLegendMouseMove);
+        window.removeEventListener('mouseup', handleLegendMouseUp);
+      };
+    }
+  }, [isDraggingLegend, handleLegendMouseMove, handleLegendMouseUp]);
+
   const handleRowSelect = (rowIndex: number) => {
     const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
     if (edgeEffectEnabled && (rowIndex === 0 || rowIndex === rows - 1)) return;
@@ -839,7 +876,14 @@ const AssayPlateDesigner = () => {
   return (
     <div className="p-6 max-w-6xl mx-auto select-none">
       {uniqueCompounds.size > 0 && (
-        <div className="fixed left-2 top-1/4 transform -translate-y-1/4 w-40 p-3 border rounded bg-white shadow-md z-20 max-h-96 overflow-y-auto">
+        <div 
+          className="fixed w-40 p-3 border rounded bg-white shadow-md z-20 max-h-96 overflow-y-auto cursor-move"
+          style={{ 
+            left: `${legendPosition.x}px`, 
+            top: `${legendPosition.y}px` 
+          }}
+          onMouseDown={handleLegendMouseDown}
+        >
           <h3 className="font-bold mb-2 text-sm">Compound Legend</h3>
           <div className="flex flex-col space-y-2">
             {[...uniqueCompounds].map((compound: string) => (
