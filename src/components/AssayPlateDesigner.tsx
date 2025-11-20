@@ -44,14 +44,14 @@ interface SelectionState {
 
 // Add this function near the top of your component to determine well size based on plate type
 const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: string, height: string } => {
-  // Smaller sizes for larger plate formats
+  // Smaller sizes for larger plate formats and mobile
   switch (plateType) {
     case 384:
-      return { width: 'w-14', height: 'h-14' };
+      return { width: 'w-8 md:w-14', height: 'h-8 md:h-14' };
     case 96:
-      return { width: 'w-20', height: 'h-20' };
+      return { width: 'w-12 md:w-20', height: 'h-12 md:h-20' };
     default:
-      return { width: 'w-24', height: 'h-24' };
+      return { width: 'w-16 md:w-24', height: 'h-16 md:h-24' };
   }
 };
 
@@ -143,6 +143,7 @@ const AssayPlateDesigner = () => {
   const [legendPosition, setLegendPosition] = useState({ x: 8, y: 100 });
   const [isDraggingLegend, setIsDraggingLegend] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isLegendVisible, setIsLegendVisible] = useState(true);
 
   const getSelectedWells = useCallback(() => {
     if (!selection) return [];
@@ -902,33 +903,58 @@ const AssayPlateDesigner = () => {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto select-none">
+    <div className="p-2 md:p-6 max-w-full md:max-w-6xl mx-auto select-none overflow-x-auto">
       {uniqueCompounds.size > 0 && (
-        <div 
-          className="fixed w-40 p-3 border rounded bg-white shadow-md z-20 max-h-96 overflow-y-auto cursor-move"
-          style={{ 
-            left: `${legendPosition.x}px`, 
-            top: `${legendPosition.y}px` 
-          }}
-          onMouseDown={handleLegendMouseDown}
-        >
-          <h3 className="font-bold mb-2 text-sm">Compound Legend</h3>
-          <div className="flex flex-col space-y-2">
-            {[...uniqueCompounds].map((compound: string) => (
-              <div
-                key={compound}
-                className="flex items-center p-1 rounded text-xs"
-                style={{ backgroundColor: getCompoundColor(compound) }}
-              >
-                <span className="truncate">{compound}</span>
+        <>
+          {/* Toggle button for mobile */}
+          <button
+            onClick={() => setIsLegendVisible(!isLegendVisible)}
+            className="fixed top-2 right-2 md:hidden z-30 bg-blue-500 text-white p-2 rounded-full shadow-lg"
+            aria-label="Toggle legend"
+          >
+            {isLegendVisible ? '✕' : '☰'}
+          </button>
+          
+          {isLegendVisible && (
+            <div 
+              className="fixed w-32 md:w-40 p-2 md:p-3 border rounded bg-white shadow-md z-20 max-h-64 md:max-h-96 overflow-y-auto cursor-move text-xs md:text-sm"
+              style={{ 
+                left: `${legendPosition.x}px`, 
+                top: `${legendPosition.y}px` 
+              }}
+              onMouseDown={handleLegendMouseDown}
+            >
+              <div className="flex justify-between items-center mb-1 md:mb-2">
+                <h3 className="font-bold text-xs md:text-sm">Compound Legend</h3>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsLegendVisible(false);
+                  }}
+                  className="md:hidden text-gray-500 hover:text-gray-700 text-lg leading-none"
+                  aria-label="Close legend"
+                >
+                  ✕
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="flex flex-col space-y-1 md:space-y-2">
+                {[...uniqueCompounds].map((compound: string) => (
+                  <div
+                    key={compound}
+                    className="flex items-center p-0.5 md:p-1 rounded text-xs"
+                    style={{ backgroundColor: getCompoundColor(compound) }}
+                  >
+                    <span className="truncate text-xs">{compound}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      <div className="mb-6 space-y-4">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="mb-4 md:mb-6 space-y-2 md:space-y-4">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4">
           <select
             value={plateType.toString()}
             onChange={(e) => {
@@ -987,14 +1013,14 @@ const AssayPlateDesigner = () => {
             <Calculator className="w-4 h-4 mr-2" /> Setup Titration
           </button>
 
-          <label className="flex items-center space-x-2 cursor-pointer">
+          <label className="flex items-center space-x-1 md:space-x-2 cursor-pointer">
             <input
               type="checkbox"
               checked={edgeEffectEnabled}
               onChange={(e) => setEdgeEffectEnabled(e.target.checked)}
-              className="form-checkbox h-5 w-5 text-blue-600"
+              className="form-checkbox h-4 w-4 md:h-5 md:w-5 text-blue-600"
             />
-            <span className="text-sm">Enable Edge Effect Exclusion</span>
+            <span className="text-xs md:text-sm">Edge Effect Exclusion</span>
           </label>
         </div>
 
@@ -1007,14 +1033,14 @@ const AssayPlateDesigner = () => {
           style={{ display: 'none' }} // Hide the input element
         />
 
-        <div className="space-y-2">
+        <div className="space-y-1.5 md:space-y-2">
           <input
             type="text"
             placeholder="Cell Type"
             value={editData.cellType}
             onChange={(e) => setEditData(prev => ({ ...prev, cellType: e.target.value }))}
             onKeyDown={handleKeyDown}
-            className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+            className={`p-1.5 md:p-2 border rounded w-full text-sm md:text-base ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
             disabled={!selection || getSelectedWells().length === 0}
           />
           <input
@@ -1023,17 +1049,17 @@ const AssayPlateDesigner = () => {
             value={editData.compound}
             onChange={(e) => setEditData(prev => ({ ...prev, compound: e.target.value }))}
             onKeyDown={handleKeyDown}
-            className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+            className={`p-1.5 md:p-2 border rounded w-full text-sm md:text-base ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
             disabled={!selection || getSelectedWells().length === 0}
           />
-          <div className="flex space-x-2">
+          <div className="flex space-x-1.5 md:space-x-2">
             <input
               type="text"
               placeholder="Concentration"
               value={editData.concentration}
               onChange={(e) => setEditData(prev => ({ ...prev, concentration: e.target.value }))}
               onKeyDown={handleKeyDown}
-              className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+              className={`p-1.5 md:p-2 border rounded w-full text-sm md:text-base ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
               disabled={!selection || getSelectedWells().length === 0}
             />
             <input
@@ -1042,7 +1068,7 @@ const AssayPlateDesigner = () => {
               value={editData.concentrationUnits}
               onChange={(e) => setEditData(prev => ({ ...prev, concentrationUnits: e.target.value }))}
               onKeyDown={handleKeyDown}
-              className={`p-2 border rounded w-full ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
+              className={`p-1.5 md:p-2 border rounded w-full text-sm md:text-base ${!selection || getSelectedWells().length === 0 ? 'opacity-50' : ''}`}
               disabled={!selection || getSelectedWells().length === 0}
             />
           </div>
@@ -1110,7 +1136,7 @@ const AssayPlateDesigner = () => {
             {Array.from({length: PLATE_CONFIGURATIONS[plateType].cols}).map((_, colIndex) => (
               <div
                 key={colIndex}
-                className={`${getWellSize(plateType).width} h-10 flex items-center justify-center text-base font-semibold ${
+                className={`${getWellSize(plateType).width} h-8 md:h-10 flex items-center justify-center text-sm md:text-base font-semibold ${
                   edgeEffectEnabled && (colIndex === 0 || colIndex === PLATE_CONFIGURATIONS[plateType].cols - 1)
                   ? 'bg-gray-200 cursor-not-allowed'
                   : 'cursor-pointer hover:bg-gray-100'
@@ -1125,7 +1151,7 @@ const AssayPlateDesigner = () => {
           {Array.from({length: PLATE_CONFIGURATIONS[plateType].rows}).map((_, rowIndex) => (
             <div key={rowIndex} className="flex">
               <div
-                className={`w-10 ${getWellSize(plateType).height} flex items-center justify-center text-base font-semibold ${
+                className={`w-8 md:w-10 ${getWellSize(plateType).height} flex items-center justify-center text-sm md:text-base font-semibold ${
                   edgeEffectEnabled && (rowIndex === 0 || rowIndex === PLATE_CONFIGURATIONS[plateType].rows - 1)
                   ? 'bg-gray-200 cursor-not-allowed'
                   : 'cursor-pointer hover:bg-gray-100'
@@ -1162,7 +1188,7 @@ const AssayPlateDesigner = () => {
                        </div>
                     )}
                     {!isUnusable && (
-                      <div className="absolute inset-0 p-1 text-sm overflow-hidden pointer-events-none">
+                      <div className="absolute inset-0 p-0.5 md:p-1 text-xs md:text-sm overflow-hidden pointer-events-none">
                         {plateType < 384 && well.cellType && <span className="block truncate font-medium">{well.cellType}</span>}
                         {well.compound && <span className="block truncate font-semibold">{well.compound}</span>}
                         {plateType < 384 && well.concentration && (
