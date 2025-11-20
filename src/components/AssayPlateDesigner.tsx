@@ -47,11 +47,11 @@ const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: str
   // Smaller sizes for larger plate formats
   switch (plateType) {
     case 384:
-      return { width: 'w-11', height: 'h-11' };
+      return { width: 'w-14', height: 'h-14' };
     case 96:
-      return { width: 'w-16', height: 'h-16' };
-    default:
       return { width: 'w-20', height: 'h-20' };
+    default:
+      return { width: 'w-24', height: 'h-24' };
   }
 };
 
@@ -1110,7 +1110,7 @@ const AssayPlateDesigner = () => {
             {Array.from({length: PLATE_CONFIGURATIONS[plateType].cols}).map((_, colIndex) => (
               <div
                 key={colIndex}
-                className={`${getWellSize(plateType).width} h-8 flex items-center justify-center text-xs ${
+                className={`${getWellSize(plateType).width} h-10 flex items-center justify-center text-base font-semibold ${
                   edgeEffectEnabled && (colIndex === 0 || colIndex === PLATE_CONFIGURATIONS[plateType].cols - 1)
                   ? 'bg-gray-200 cursor-not-allowed'
                   : 'cursor-pointer hover:bg-gray-100'
@@ -1125,7 +1125,7 @@ const AssayPlateDesigner = () => {
           {Array.from({length: PLATE_CONFIGURATIONS[plateType].rows}).map((_, rowIndex) => (
             <div key={rowIndex} className="flex">
               <div
-                className={`w-8 ${getWellSize(plateType).height} flex items-center justify-center text-xs ${
+                className={`w-10 ${getWellSize(plateType).height} flex items-center justify-center text-base font-semibold ${
                   edgeEffectEnabled && (rowIndex === 0 || rowIndex === PLATE_CONFIGURATIONS[plateType].rows - 1)
                   ? 'bg-gray-200 cursor-not-allowed'
                   : 'cursor-pointer hover:bg-gray-100'
@@ -1162,9 +1162,9 @@ const AssayPlateDesigner = () => {
                        </div>
                     )}
                     {!isUnusable && (
-                      <div className="absolute inset-0 p-1 text-xs overflow-hidden pointer-events-none">
-                        {plateType < 384 && well.cellType && <span className="block truncate">{well.cellType}</span>}
-                        {well.compound && <span className="block truncate">{well.compound}</span>}
+                      <div className="absolute inset-0 p-1 text-sm overflow-hidden pointer-events-none">
+                        {plateType < 384 && well.cellType && <span className="block truncate font-medium">{well.cellType}</span>}
+                        {well.compound && <span className="block truncate font-semibold">{well.compound}</span>}
                         {plateType < 384 && well.concentration && (
                           <span className="block truncate">
                             {well.concentration} {well.concentrationUnits}
