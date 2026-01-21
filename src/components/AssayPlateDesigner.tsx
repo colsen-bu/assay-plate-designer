@@ -2,9 +2,12 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Save, FileDown, Upload, Trash, Calculator, Shuffle, FileUp, Share2, Copy, Check, X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { TitrationCalculator } from '../lib/titration_calculation';
 import { createShareUrl, parseShareUrl, getNotationStats } from '../lib/plate-notation';
 import { PLATE_CONFIGURATIONS, type Well, type SavedPlate, type SelectionState } from '../lib/types';
+import packageJson from '../../package.json';
+import { CHANGELOG } from '../lib/changelog';
 
 // Add this function near the top of your component to determine well size based on plate type
 const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: string, height: string } => {
@@ -146,6 +149,11 @@ const AssayPlateDesigner = () => {
   const [shareUrl, setShareUrl] = useState('');
   const [shareStats, setShareStats] = useState<{ charCount: number; wellCount: number; estimatedQrVersion: number } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Version/changelog state
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const changelogRef = useRef<HTMLDivElement | null>(null);
+  const appVersion = packageJson.version as string;
 
   const [wellsHistory, setWellsHistory] = useState<Array<{ [key: string]: Well }>>([{}]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -793,6 +801,26 @@ const AssayPlateDesigner = () => {
     }
   }, [isDraggingLegend, handleLegendMouseMove, handleLegendMouseUp]);
 
+  // Click outside handler for changelog dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isChangelogOpen && changelogRef.current && !changelogRef.current.contains(e.target as Node)) {
+        setIsChangelogOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsChangelogOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [isChangelogOpen]);
+
   const handleRowSelect = (rowIndex: number) => {
     const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
     if (edgeEffectEnabled && (rowIndex === 0 || rowIndex === rows - 1)) return;
@@ -914,6 +942,48 @@ const AssayPlateDesigner = () => {
 
   return (
     <div className="p-2 md:p-6 max-w-full md:max-w-6xl mx-auto select-none overflow-x-auto">
+      {/* Version badge + changelog dropdown */}
+      <div className="fixed right-2 bottom-3 md:bottom-auto md:top-2 z-40" ref={changelogRef}>
+        <button
+          onClick={() => setIsChangelogOpen((o) => !o)}
+          className="px-3 py-2 rounded-md bg-gray-800 text-white text-sm shadow hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 active:scale-[0.98]"
+          aria-haspopup="true"
+          aria-expanded={isChangelogOpen}
+          aria-label="Open changelog"
+        >
+          v{appVersion}
+        </button>
+        {isChangelogOpen && (
+          <div className="absolute right-0 mt-2 w-[calc(100vw-1rem)] sm:w-80 max-h-[70vh] sm:max-h-96 overflow-y-auto rounded-md border bg-white shadow-lg p-3 text-sm">
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-semibold">Changelog</div>
+              <button
+                onClick={() => setIsChangelogOpen(false)}
+                className="p-1 rounded hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+                aria-label="Close changelog"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3">
+              {CHANGELOG.map((entry) => (
+                <div key={entry.version} className="border-b last:border-b-0 pb-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">v{entry.version}</span>
+                    {entry.date && <span className="text-xs text-gray-500">{entry.date}</span>}
+                  </div>
+                  <ul className="list-disc list-inside mt-1 text-gray-700">
+                    {entry.changes.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {uniqueCompounds.size > 0 && (
         <>
           {/* Toggle button for mobile */}
@@ -982,68 +1052,67 @@ const AssayPlateDesigner = () => {
           
           <button
             onClick={() => setShowSaveModal(true)}
-            className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
           >
-            <Save className="w-4 h-4 mr-2" /> Save
+            <Save className="w-4 h-4 mr-1" /> Save
           </button>
 
           <button
             onClick={() => setShowLoadModal(true)}
-            className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            className="flex items-center px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
           >
-            <Upload className="w-4 h-4 mr-2" /> Load
+            <Upload className="w-4 h-4 mr-1" /> Load
           </button>
 
           <button
-          onClick={() => setShowClearConfirm(true)}
-          className="flex items-center px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            onClick={() => setShowClearConfirm(true)}
+            className="flex items-center px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
           >
-          <Trash className="w-4 h-4 mr-2" /> Clear Saved
-          </button>
-          
-          {/* Add Import CSV Button */}
-          <button
-            onClick={triggerFileInput} // Correct: triggers the hidden input
-            className="flex items-center px-4 py-2 bg-teal-500 text-white rounded hover:bg-teal-600"
-          >
-            <FileUp className="w-4 h-4 mr-2" /> Import CSV
+            <Trash className="w-4 h-4 mr-1" /> Clear
           </button>
           
           <button
-            onClick={exportToCSV} // Ensure this is exportToCSV, not handleFileUpload
-            className="flex items-center px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
+            onClick={triggerFileInput}
+            className="flex items-center px-4 py-2 bg-teal-500 text-white rounded hover:bg-teal-600 text-sm"
           >
-            <FileDown className="w-4 h-4 mr-2" /> Export CSV
+            <FileUp className="w-4 h-4 mr-1" /> Import
+          </button>
+          
+          <button
+            onClick={exportToCSV}
+            className="flex items-center px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm"
+          >
+            <FileDown className="w-4 h-4 mr-1" /> Export
           </button>
 
           <button
             onClick={handleQuickShare}
             disabled={Object.keys(wells).length === 0}
-            className={`flex items-center px-4 py-2 text-white rounded ${
+            className={`flex items-center px-4 py-2 text-white rounded text-sm ${
               Object.keys(wells).length > 0
                 ? 'bg-orange-500 hover:bg-orange-600'
                 : 'bg-gray-400 cursor-not-allowed'
             }`}
             title="Create a shareable URL for this plate"
           >
-            <Share2 className="w-4 h-4 mr-2" /> Quick Share
+            <Share2 className="w-4 h-4 mr-1" /> Share
           </button>
 
           <button
             onClick={() => setShowTitrationModal(true)}
-            className="flex items-center px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+            className="flex items-center px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm"
           >
-            <Calculator className="w-4 h-4 mr-2" /> Setup Titration
+            <Calculator className="w-4 h-4 mr-1" /> Titration
           </button>
 
-          <label className="flex items-center space-x-1 md:space-x-2 cursor-pointer">
+          <label className="flex items-center space-x-1 cursor-pointer text-sm">
             <input
               type="checkbox"
               checked={edgeEffectEnabled}
               onChange={(e) => setEdgeEffectEnabled(e.target.checked)}
-              className="form-checkbox h-4 w-4 md:h-5 md:w-5 text-blue-600"
+              className="form-checkbox h-4 w-4 text-blue-600"
             />
-            <span className="text-xs md:text-sm">Edge Effect Exclusion</span>
+            <span>Edge Effect Exclusion</span>
           </label>
         </div>
 
@@ -1051,9 +1120,9 @@ const AssayPlateDesigner = () => {
         <input 
           type="file"
           ref={fileInputRef}
-          onChange={handleFileUpload} // Attach the handler
-          accept=".csv" // Accept only CSV files
-          style={{ display: 'none' }} // Hide the input element
+          onChange={handleFileUpload}
+          accept=".csv"
+          style={{ display: 'none' }}
         />
 
         <div className="space-y-1.5 md:space-y-2">
@@ -1385,12 +1454,33 @@ const AssayPlateDesigner = () => {
             </div>
 
             {shareStats && (
-              <div className="text-xs text-gray-500 mb-4 p-2 bg-gray-50 rounded">
-                <p>📊 <strong>Stats:</strong> {shareStats.wellCount} wells, {shareStats.charCount} characters</p>
-                <p>📱 <strong>QR Code:</strong> Would need version {shareStats.estimatedQrVersion} (
-                  {shareStats.estimatedQrVersion <= 6 ? '✅ easy to scan' : 
-                   shareStats.estimatedQrVersion <= 11 ? '⚠️ medium density' : '⚠️ high density'}
-                )</p>
+              <div className="mb-4">
+                {shareUrl.length <= 2331 ? (
+                  <>
+                    <div className="flex justify-center mb-3 p-4 bg-white border rounded">
+                      <QRCodeSVG 
+                        value={shareUrl} 
+                        size={180}
+                        level="L"
+                        includeMargin={true}
+                      />
+                    </div>
+                    <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded text-center">
+                      <p>{shareStats.wellCount} wells • {shareUrl.length} chars • 
+                        {shareUrl.length <= 500 ? '✅ Easy to scan' : 
+                         shareUrl.length <= 1500 ? '⚠️ Medium density' : '⚠️ High density'}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-orange-600 p-3 bg-orange-50 border border-orange-200 rounded text-center">
+                    <p className="font-medium mb-1">⚠️ QR Code too large</p>
+                    <p className="text-xs text-gray-600">
+                      {shareStats.wellCount} wells ({shareUrl.length} chars) exceeds QR code capacity.
+                      Use the copy button above to share the URL directly.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
