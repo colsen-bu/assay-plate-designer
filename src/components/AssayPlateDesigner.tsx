@@ -1,46 +1,10 @@
 "use client"
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Save, FileDown, Upload, Trash, Calculator, Shuffle, FileUp } from 'lucide-react'; // Import FileUp icon
+import { Save, FileDown, Upload, Trash, Calculator, Shuffle, FileUp, Share2, Copy, Check, X } from 'lucide-react';
 import { TitrationCalculator } from '../lib/titration_calculation';
-
-const PLATE_CONFIGURATIONS = {
-  6: { rows: 2, cols: 3 },
-  12: { rows: 3, cols: 4 },
-  24: { rows: 4, cols: 6 },
-  48: { rows: 6, cols: 8 },
-  96: { rows: 8, cols: 12 },
-  384: { rows: 16, cols: 24 }
-};
-
-// Function to generate a consistent color for a compound name
-interface Well {
-  cellType?: string;
-  compound?: string;
-  concentration?: string;
-  concentrationUnits?: string;
-  dilutionStep?: number;
-  replicate?: number;
-  titrationId?: string;
-}
-
-// 1. Add interface for saved plates
-interface SavedPlate {
-  plateType: keyof typeof PLATE_CONFIGURATIONS;
-  wells: { [key: string]: Well };
-}
-
-// Add new interfaces
-interface SelectionEdge {
-  row: number;
-  col: number;
-}
-
-interface SelectionState {
-  fixed: SelectionEdge;
-  moving: SelectionEdge;
-  lastMoving?: SelectionEdge; // Track previous position
-}
+import { createShareUrl, parseShareUrl, getNotationStats } from '../lib/plate-notation';
+import { PLATE_CONFIGURATIONS, type Well, type SavedPlate, type SelectionState } from '../lib/types';
 
 // Add this function near the top of your component to determine well size based on plate type
 const getWellSize = (plateType: keyof typeof PLATE_CONFIGURATIONS): { width: string, height: string } => {
@@ -176,6 +140,12 @@ const AssayPlateDesigner = () => {
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showTitrationModal, setShowTitrationModal] = useState(false);
+
+  // Quick Share state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareStats, setShareStats] = useState<{ charCount: number; wellCount: number; estimatedQrVersion: number } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [wellsHistory, setWellsHistory] = useState<Array<{ [key: string]: Well }>>([{}]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -314,6 +284,46 @@ const AssayPlateDesigner = () => {
 
     reader.readAsText(file);
   };
+
+  // Check for shared plate in URL hash on initial load
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sharedPlate = parseShareUrl();
+      if (sharedPlate) {
+        setPlateType(sharedPlate.plateType);
+        setWells(sharedPlate.wells);
+        // Clear the hash after loading
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, []);
+
+  // Handle Quick Share
+  const handleQuickShare = useCallback(() => {
+    const url = createShareUrl(plateType, wells);
+    setShareUrl(url);
+    
+    // Get the notation part for stats
+    const notation = url.split('#pn=')[1];
+    if (notation) {
+      const decoded = decodeURIComponent(notation);
+      setShareStats(getNotationStats(decoded));
+    }
+    
+    setShowShareModal(true);
+    setCopied(false);
+  }, [plateType, wells]);
+
+  // Copy share URL to clipboard
+  const copyShareUrl = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }, [shareUrl]);
 
   useEffect(() => {
     // Only run this effect if edgeEffectEnabled or plateType has changed
@@ -1007,6 +1017,19 @@ const AssayPlateDesigner = () => {
           </button>
 
           <button
+            onClick={handleQuickShare}
+            disabled={Object.keys(wells).length === 0}
+            className={`flex items-center px-4 py-2 text-white rounded ${
+              Object.keys(wells).length > 0
+                ? 'bg-orange-500 hover:bg-orange-600'
+                : 'bg-gray-400 cursor-not-allowed'
+            }`}
+            title="Create a shareable URL for this plate"
+          >
+            <Share2 className="w-4 h-4 mr-2" /> Quick Share
+          </button>
+
+          <button
             onClick={() => setShowTitrationModal(true)}
             className="flex items-center px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
           >
@@ -1319,6 +1342,75 @@ const AssayPlateDesigner = () => {
               }}
               onCancel={() => setShowTitrationModal(false)}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Quick Share Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-lg w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold">Quick Share</h2>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-600 mb-4">
+              Share this link to let others view your plate configuration. 
+              <span className="text-orange-600 font-medium"> Note: This link is not encrypted.</span>
+            </p>
+
+            <div className="flex items-center gap-2 mb-4">
+              <input
+                type="text"
+                readOnly
+                value={shareUrl}
+                className="flex-1 p-2 border rounded bg-gray-50 text-sm font-mono truncate"
+              />
+              <button
+                onClick={copyShareUrl}
+                className={`flex items-center px-3 py-2 rounded transition-colors ${
+                  copied 
+                    ? 'bg-green-500 text-white' 
+                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {shareStats && (
+              <div className="text-xs text-gray-500 mb-4 p-2 bg-gray-50 rounded">
+                <p>📊 <strong>Stats:</strong> {shareStats.wellCount} wells, {shareStats.charCount} characters</p>
+                <p>📱 <strong>QR Code:</strong> Would need version {shareStats.estimatedQrVersion} (
+                  {shareStats.estimatedQrVersion <= 6 ? '✅ easy to scan' : 
+                   shareStats.estimatedQrVersion <= 11 ? '⚠️ medium density' : '⚠️ high density'}
+                )</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  // Open in new window to test
+                  window.open(shareUrl, '_blank');
+                }}
+                className="flex-1 p-2 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Test Link
+              </button>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="flex-1 p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
