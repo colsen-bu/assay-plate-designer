@@ -1199,7 +1199,7 @@ const AssayPlateDesigner = () => {
           onMouseLeave={handleMouseUp}
         >
          <div 
-          className="absolute top-0 left-0 w-8 h-8 bg-gray-200 hover:bg-gray-300 flex items-center justify-center cursor-pointer z-10"
+          className="absolute top-0 left-0 w-8 md:w-10 h-8 md:h-10 bg-gray-200 hover:bg-gray-300 flex items-center justify-center cursor-pointer z-10"
           onClick={() => {
             const { rows, cols } = PLATE_CONFIGURATIONS[plateType];
             if (selection && getSelectedWells().length > 0) {
@@ -1224,7 +1224,7 @@ const AssayPlateDesigner = () => {
           ☐
         </div> 
           <div className="flex">
-            <div className="w-8" />
+            <div className="w-8 md:w-10 h-8 md:h-10" />
             {Array.from({length: PLATE_CONFIGURATIONS[plateType].cols}).map((_, colIndex) => (
               <div
                 key={colIndex}
