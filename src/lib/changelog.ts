@@ -6,6 +6,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.1",
+    date: "2026-01-26",
+    changes: [
+      "Add TinyURL integration for shortened share links",
+      "Improved QR code generation using short URLs for easier scanning",
+      "Updated share modal with collapsible full URL section",
+    ],
+  },
+  {
     version: "0.2.0",
     date: "2026-01-21",
     changes: [

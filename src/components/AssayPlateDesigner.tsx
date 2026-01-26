@@ -147,6 +147,9 @@ const AssayPlateDesigner = () => {
   // Quick Share state
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
+  const [shortUrl, setShortUrl] = useState('');
+  const [isShortening, setIsShortening] = useState(false);
+  const [shortenError, setShortenError] = useState('');
   const [shareStats, setShareStats] = useState<{ charCount: number; wellCount: number; estimatedQrVersion: number } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -306,10 +309,33 @@ const AssayPlateDesigner = () => {
     }
   }, []);
 
+  // Shorten URL using TinyURL API
+  const shortenUrl = useCallback(async (longUrl: string) => {
+    setIsShortening(true);
+    setShortenError('');
+    setShortUrl('');
+    
+    try {
+      const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+      if (!response.ok) {
+        throw new Error('Failed to shorten URL');
+      }
+      const shortened = await response.text();
+      setShortUrl(shortened);
+    } catch (err) {
+      console.error('URL shortening failed:', err);
+      setShortenError('Could not shorten URL. You can still use the full link.');
+    } finally {
+      setIsShortening(false);
+    }
+  }, []);
+
   // Handle Quick Share
   const handleQuickShare = useCallback(() => {
     const url = createShareUrl(plateType, wells);
     setShareUrl(url);
+    setShortUrl('');
+    setShortenError('');
     
     // Get the notation part for stats
     const notation = url.split('#pn=')[1];
@@ -320,18 +346,22 @@ const AssayPlateDesigner = () => {
     
     setShowShareModal(true);
     setCopied(false);
-  }, [plateType, wells]);
+    
+    // Automatically shorten the URL
+    shortenUrl(url);
+  }, [plateType, wells, shortenUrl]);
 
-  // Copy share URL to clipboard
-  const copyShareUrl = useCallback(async () => {
+  // Copy share URL to clipboard (prefers short URL if available)
+  const copyShareUrl = useCallback(async (useShort: boolean = true) => {
     try {
-      await navigator.clipboard.writeText(shareUrl);
+      const urlToCopy = useShort && shortUrl ? shortUrl : shareUrl;
+      await navigator.clipboard.writeText(urlToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
-  }, [shareUrl]);
+  }, [shareUrl, shortUrl]);
 
   useEffect(() => {
     // Only run this effect if edgeEffectEnabled or plateType has changed
@@ -1434,28 +1464,76 @@ const AssayPlateDesigner = () => {
               <span className="text-orange-600 font-medium"> Note: This link is not encrypted.</span>
             </p>
 
-            <div className="flex items-center gap-2 mb-4">
-              <input
-                type="text"
-                readOnly
-                value={shareUrl}
-                className="flex-1 p-2 border rounded bg-gray-50 text-sm font-mono truncate"
-              />
-              <button
-                onClick={copyShareUrl}
-                className={`flex items-center px-3 py-2 rounded transition-colors ${
-                  copied 
-                    ? 'bg-green-500 text-white' 
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                }`}
-              >
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              </button>
+            {/* Shortened URL section */}
+            <div className="mb-4">
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Shortened URL</label>
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="text"
+                  readOnly
+                  value={isShortening ? 'Shortening...' : (shortUrl || shortenError || 'Generating short URL...')}
+                  className={`flex-1 p-2 border rounded text-sm font-mono truncate ${
+                    shortenError ? 'bg-red-50 text-red-600' : shortUrl ? 'bg-green-50' : 'bg-gray-50'
+                  }`}
+                />
+                <button
+                  onClick={() => copyShareUrl(true)}
+                  disabled={!shortUrl || isShortening}
+                  className={`flex items-center px-3 py-2 rounded transition-colors ${
+                    copied 
+                      ? 'bg-green-500 text-white' 
+                      : shortUrl 
+                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
+
+            {/* Full URL section (collapsible) */}
+            <details className="mb-4">
+              <summary className="text-xs font-medium text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700">
+                Full URL ({shareUrl.length} chars)
+              </summary>
+              <div className="flex items-center gap-2 mt-1">
+                <input
+                  type="text"
+                  readOnly
+                  value={shareUrl}
+                  className="flex-1 p-2 border rounded bg-gray-50 text-sm font-mono truncate"
+                />
+                <button
+                  onClick={() => copyShareUrl(false)}
+                  className="flex items-center px-3 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </details>
 
             {shareStats && (
               <div className="mb-4">
-                {shareUrl.length <= 2331 ? (
+                {shortUrl ? (
+                  <>
+                    <div className="flex justify-center mb-3 p-4 bg-white border rounded">
+                      <QRCodeSVG 
+                        value={shortUrl} 
+                        size={180}
+                        level="M"
+                        includeMargin={true}
+                      />
+                    </div>
+                    <div className="text-xs text-green-600 p-2 bg-green-50 rounded text-center">
+                      <p>✅ {shareStats.wellCount} wells • Using shortened URL for easy scanning</p>
+                    </div>
+                  </>
+                ) : isShortening ? (
+                  <div className="flex justify-center mb-3 p-4 bg-gray-50 border rounded">
+                    <div className="animate-pulse text-gray-400">Generating QR code...</div>
+                  </div>
+                ) : shareUrl.length <= 2331 ? (
                   <>
                     <div className="flex justify-center mb-3 p-4 bg-white border rounded">
                       <QRCodeSVG 
@@ -1487,8 +1565,8 @@ const AssayPlateDesigner = () => {
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  // Open in new window to test
-                  window.open(shareUrl, '_blank');
+                  // Open in new window to test (use short URL if available)
+                  window.open(shortUrl || shareUrl, '_blank');
                 }}
                 className="flex-1 p-2 bg-gray-100 rounded hover:bg-gray-200"
               >
