@@ -309,22 +309,34 @@ const AssayPlateDesigner = () => {
     }
   }, []);
 
-  // Shorten URL using TinyURL API
+  // Create short URL using internal API
   const shortenUrl = useCallback(async (longUrl: string) => {
     setIsShortening(true);
     setShortenError('');
     setShortUrl('');
     
     try {
-      const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
+      const response = await fetch('/api/shorten', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: longUrl }),
+      });
+
       if (!response.ok) {
-        throw new Error('Failed to shorten URL');
+        throw new Error('Failed to create short URL');
       }
-      const shortened = await response.text();
-      setShortUrl(shortened);
+
+      const data = await response.json();
+      if (!data?.shortUrl || typeof data.shortUrl !== 'string') {
+        throw new Error('Invalid short URL response');
+      }
+
+      setShortUrl(data.shortUrl);
     } catch (err) {
-      console.error('URL shortening failed:', err);
-      setShortenError('Could not shorten URL. You can still use the full link.');
+      console.error('Short URL generation failed:', err);
+      setShortenError('Could not generate short URL. You can still use the full link.');
     } finally {
       setIsShortening(false);
     }
@@ -347,7 +359,7 @@ const AssayPlateDesigner = () => {
     setShowShareModal(true);
     setCopied(false);
     
-    // Automatically shorten the URL
+    // Automatically generate a short URL
     shortenUrl(url);
   }, [plateType, wells, shortenUrl]);
 
@@ -1464,14 +1476,14 @@ const AssayPlateDesigner = () => {
               <span className="text-orange-600 font-medium"> Note: This link is not encrypted.</span>
             </p>
 
-            {/* Shortened URL section */}
+            {/* Short URL section */}
             <div className="mb-4">
-              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Shortened URL</label>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Short URL</label>
               <div className="flex items-center gap-2 mt-1">
                 <input
                   type="text"
                   readOnly
-                  value={isShortening ? 'Shortening...' : (shortUrl || shortenError || 'Generating short URL...')}
+                  value={isShortening ? 'Generating...' : (shortUrl || shortenError || 'Generating short URL...')}
                   className={`flex-1 p-2 border rounded text-sm font-mono truncate ${
                     shortenError ? 'bg-red-50 text-red-600' : shortUrl ? 'bg-green-50' : 'bg-gray-50'
                   }`}
@@ -1526,7 +1538,7 @@ const AssayPlateDesigner = () => {
                       />
                     </div>
                     <div className="text-xs text-green-600 p-2 bg-green-50 rounded text-center">
-                      <p>✅ {shareStats.wellCount} wells • Using shortened URL for easy scanning</p>
+                      <p>✅ {shareStats.wellCount} wells • Using short URL for easy scanning</p>
                     </div>
                   </>
                 ) : isShortening ? (
